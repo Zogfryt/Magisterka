@@ -51,7 +51,7 @@ After those steps you will be able to use the app from localhost and port specif
 
 1. Create **.env** file in app folder with following specification:
 ```
-DATABASE_URL=neo4j://172.25.0.3:7687
+DATABASE_URL=neo4j://172.25.0.2:7687
 DATABASE_USR=neo4j
 DATABASE_PASSWORD=AGH_2025
 ```
