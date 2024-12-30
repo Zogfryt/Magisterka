@@ -31,7 +31,7 @@ DATABASE_URL=neo4j://localhost:7687
 DATABASE_USR=neo4j
 DATABASE_PASSWORD=AGH_2025
 ```
-4. Run Neo4j database using 
+4. Run Neo4j database using (First you have to comment streamlit container creation -- will be fixed next update)
 ```
 docker compose up
 ```
@@ -46,3 +46,19 @@ streamlit run ./app/main.py
 ```
 
 After those steps you will be able to use the app from localhost and port specified by streamlit.
+
+# Running only docker
+
+1. Create **.env** file in app folder with following specification:
+```
+DATABASE_URL=neo4j://172.25.0.3:7687
+DATABASE_USR=neo4j
+DATABASE_PASSWORD=AGH_2025
+```
+
+2. Build containers
+```
+docker compose up
+```
+
+This will spawn both streamlit and neo4j containers. This is solution **without** cuda support.

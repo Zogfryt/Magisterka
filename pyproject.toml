@@ -6,7 +6,7 @@ authors = ["Wajdzik <Zogfryt@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.9.7 || >3.9.7,<3.12"
+python = ">=3.9,<3.9.7 || >3.9.7,<3.13"
 numpy = "<2.0"
 neo4j = "^5.27.0"
 streamlit = "^1.41.1"
