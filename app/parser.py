@@ -1,11 +1,9 @@
 import json
-from spacy_download import load_spacy
 from typing import List, Tuple
 import logging
 from dataclasses_custom import Document
 from spacy.tokens import Span
-import spacy
-import torch
+from spacy import Language
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,9 +30,7 @@ def json_to_dict(content: str) -> List[Document]:
     return texts
 
 
-def get_ners(doc: Document) -> List[Tuple[str,str]]:
-    nlp = load_spacy("pl_core_news_lg")
-
+def get_ners(doc: Document, nlp: Language) -> List[Tuple[str,str]]:
     logging.info('Extracting entities')
     lead_content_ents = nlp(doc.lead_content).ents
     content_ents = nlp(doc.content).ents

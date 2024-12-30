@@ -12,7 +12,7 @@ def load_data_action(content: str, filename: str):
     documents = json_to_dict(content)
     status_.write('Extracting Named Entities')
     for doc in tqdm(documents):
-        doc.entities = get_ners(doc)
+        doc.entities = get_ners(doc, session_state['nlp'])
     status_.write('Sending to database...')
     db_driver.load_data(documents, filename)
     status_.update(label='Loading complete!', state='complete', expanded=False)

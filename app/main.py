@@ -1,10 +1,5 @@
 from streamlit import write, markdown
 from shared import init
-import torch
-import spacy
-
-print(torch.cuda.is_available())
-print(spacy.require_gpu())
 
 if __name__ == '__main__':
     init()
