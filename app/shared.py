@@ -1,11 +1,8 @@
 from streamlit import session_state
 from loader import Neo4jExecutor
-from dotenv import load_dotenv
-from spacy_download import load_spacy
+from spacy import load
 
 def init():
-    load_dotenv()
-
     if 'db_driver' not in session_state:
         session_state['db_driver'] = Neo4jExecutor()
     if 'nlp' not in session_state:
@@ -16,4 +13,4 @@ def init():
             spacy.require_gpu()
         except ImportError:
             print('No GPU support, using cpu only')
-        session_state['nlp'] = load_spacy("pl_core_news_lg")
+        session_state['nlp'] = load('pl_core_news_lg')
