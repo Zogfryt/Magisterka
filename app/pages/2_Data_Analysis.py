@@ -11,7 +11,7 @@ def entity_plot(data: Dict[Tuple[str,str],int]):
         entity_dict[key[0]] = entity_dict.get(key[0],0) + value
     dfs = Series(entity_dict)
     dfs.sort_values(inplace=True,ascending=False)
-    fig = px.bar(dfs.iloc[:20])
+    fig = px.bar(dfs.iloc[:20],title='Most frequent entities in the same document as searched entity')
     plotly_chart(fig)
     
 def category_plot(data: Dict[Tuple[str,str],int]):
@@ -20,14 +20,14 @@ def category_plot(data: Dict[Tuple[str,str],int]):
         category_dict[key[1]] = category_dict.get(key[1],0) + value
     dfs = Series(category_dict)
     dfs.sort_values(inplace=True,ascending=False)
-    fig = px.bar(dfs.iloc[:20])
+    fig = px.bar(dfs.iloc[:20],title='Most frequent types of entities in the same document as searched entity')
     plotly_chart(fig)
     
 def combined_plot(data: Dict[Tuple[str,str],int]):
     dfs = Series({f"{key[0]}({key[1]})": val for key, val in data.items()})
     print(dfs.head())
     dfs.sort_values(inplace=True,ascending=False)
-    fig = px.bar(dfs.iloc[:20])
+    fig = px.bar(dfs.iloc[:20],title='Most frequent entities with types in the same document as searched entity')
     plotly_chart(fig)
 
 init()
