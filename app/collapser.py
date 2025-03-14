@@ -13,7 +13,7 @@ def __ner_vector(counts: Counter, map: Dict[Tuple[str,str],int]) -> np.ndarray:
     for key, value in counts.items():
         vec[map[key]] = value
         
-    return vec / np.sqrt(np.sum(vec**2))
+    return vec / (np.sqrt(np.sum(vec**2)) + 1e-10) 
 
 def __calculate_cosine(count1: Counter, count2: Counter) -> float:
     index = dict()
@@ -61,6 +61,7 @@ def create_similarity_links(documents: List[Document]) -> List[LinkVector]:
                         jaccard=jacc
                     )
                 )
+    return vectors
             
     
 
