@@ -3,6 +3,7 @@ from parser import json_to_dict, get_ners, json_with_ner_to_dict
 from shared import init
 from loader import Neo4jExecutor
 from tqdm import tqdm
+from collapser import create_similarity_links
 
 
 def load_data_action(content: str, filename: str, ner_format: bool):
@@ -17,8 +18,10 @@ def load_data_action(content: str, filename: str, ner_format: bool):
     for doc in tqdm(documents):
         if len(doc.entities) == 0:
             doc.entities = get_ners(doc, session_state['nlp'])
+    status_.write('Calculating distances')
+    vectors = create_similarity_links(documents)
     status_.write('Sending to database...')
-    db_driver.load_data(documents, filename)
+    db_driver.load_data(documents, vectors, filename)
     status_.update(label='Loading complete!', state='complete', expanded=False)
     rerun()
     

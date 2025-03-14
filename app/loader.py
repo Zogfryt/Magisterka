@@ -1,7 +1,7 @@
 from neo4j import GraphDatabase, Result, Driver
 import logging
 from os import getenv
-from dataclasses_custom import Document
+from dataclasses_custom import Document, LinkVector
 from typing import List, Tuple, Dict, Tuple
 
 logging.basicConfig(level=logging.INFO)
@@ -11,6 +11,11 @@ MATCH (e:Entity {entity: $entity, type: $type, filename: $filename})
 MERGE (e)-[r:USED_IN]-(a)
 ON CREATE SET r.count = 1
 ON MATCH SET r.count = r.count + 1"""
+
+SIMILARITY_EDGE_STRING = """MATCH (a:Article {url: $url1, entry_number: $entry_number1, filename: $filename})
+MATCH (b:Article {url: $url2, entry_number: $entry_number2, filename: $filename})
+MERGE (b)-[r:SIMILARITY {cosinus: $cosinus, jaccard: $jaccard}]-(a)
+"""
 
 class Neo4jExecutor:
     
@@ -45,7 +50,7 @@ class Neo4jExecutor:
             return [record.value('entity') for record in list_entities(session)]
 
 
-    def load_data(self, docs: List[Document], filename: str):
+    def load_data(self, docs: List[Document], similarity_edges: List[LinkVector], filename: str):
         logging.info("Loading to database") 
         with self.driver.session() as session:
             def create_article(tx, doc: Document):
@@ -77,12 +82,34 @@ class Neo4jExecutor:
                     type=entity[1],
                     filename=filename
                 )
+                
+            def create_similarity_links(tx, url1: str, url2: str, entry_number1: str, entry_number2: str, filename: str, cosinus: float, jaccard: float):
+                return tx.run(
+                    SIMILARITY_EDGE_STRING,
+                    url1=url1,
+                    url2=url2,
+                    entry_number1=entry_number1,
+                    entry_number2=entry_number2,
+                    filename=filename,
+                    cosinus=cosinus,
+                    jaccard=jaccard
+                )
             
             for doc in docs:
                 session.execute_write(create_article,doc)
                 for ent in doc.entities:
                     session.execute_write(create_entity,ent)
                     session.execute_write(create_edge,doc.url,ent,doc.entry_number)
+            
+            for linkvector in similarity_edges:
+                session.execute_write(create_similarity_links,
+                                      linkvector.doc1.url,
+                                      linkvector.doc2.url,
+                                      linkvector.doc1.entry_number,
+                                      linkvector.doc2.entry_number,
+                                      filename,
+                                      linkvector.cosinus,
+                                      linkvector.jaccard)
 
                     
                 

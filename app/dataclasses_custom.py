@@ -11,3 +11,10 @@ class Document():
     recipe_label: str
     tags: List[str]
     entities: List[Tuple[str,str]] = field(default_factory=list)
+    
+@dataclass()
+class LinkVector:
+    doc1: Document
+    doc2: Document
+    cosinus: float
+    jaccard: float
