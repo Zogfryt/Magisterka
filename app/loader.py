@@ -1,4 +1,4 @@
-from neo4j import GraphDatabase, Result, Driver
+from neo4j import Result, Driver
 import logging
 from os import getenv
 from dataclasses_custom import Document, LinkVector
@@ -21,8 +21,8 @@ class Neo4jExecutor:
     
     driver: Driver
     
-    def __init__(self):
-        self.driver = GraphDatabase.driver(getenv('DATABASE_URL'),auth=(getenv('DATABASE_USR'),getenv('DATABASE_PASSWORD')))  
+    def __init__(self, driver: Driver):
+        self.driver = driver 
         try:
             self.driver.verify_connectivity()
         except Exception:
@@ -150,5 +150,15 @@ RETURN e1, r
                 key=(record[0]['entity'],record[0]['type'])
                 return_dict[key] = return_dict.get(key,0) + record[1]['count']
             return return_dict
-    
+        
+    def update_with_communities(self, communities: List[Dict[str,str]]):
+        records, summary, keys  = self.driver.execute_query(
+            """UNWIND $communities as data
+               MATCH (a: Article)
+               WHERE id(a) = toInteger(data.nodeId)
+               SET a.communityId = data.communityId""",
+            database_="neo4j",
+            communities=communities
+        )
+        print(summary.counters)
     
