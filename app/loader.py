@@ -26,7 +26,7 @@ class Neo4jExecutor:
         try:
             self.driver.verify_connectivity()
         except Exception:
-            print("connection error")
+            logging.error("connection error")
 
     def get_files(self) -> List[str]:
         with self.driver.session() as session:
@@ -160,5 +160,5 @@ RETURN e1, r
             database_="neo4j",
             communities=communities
         )
-        print(summary.counters)
+        logging.info(f"Updating copmmunity nodes status: {summary.counters}")
     

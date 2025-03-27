@@ -3,6 +3,7 @@ from graphdatascience import GraphDataScience, Graph
 from typing import List
 from itertools import chain
 from pandas import DataFrame
+import logging
 
 ENTITY_GROUP_QUERY="""
 MATCH (e:Entity)-[r:USED_IN]->(a:Article)
@@ -11,6 +12,18 @@ WHERE id(a) <> id(b) and id(a) in $communityNodes and id(b) in $communityNodes
 WITH e, sum(r.count) as entityCount
 RETURN e{.entity, entityCount}
 """
+
+GRAPH_PROJECTION_FOR_MODULARITY_QUERY = '''
+MATCH (source: Article)-[r:SIMILARITY]-(target: Article)
+WHERE source.filename IN ["output.json"] AND source.communityId IS NOT NULL AND target.communityId IS NOT NULL
+RETURN gds.graph.project('Modularity',
+source,
+target,
+{
+    sourceNodeProperties: source { .communityId },
+    targetNodeProperties: target { .communityId },
+    relationshipProperties: r { .cosinus }
+}, {undirectedRelationshipTypes: ['*']})'''
 
 class Analyzer:
     neo4j_driver: Driver
@@ -23,7 +36,7 @@ class Analyzer:
         try:
             self.neo4j_driver.verify_connectivity()
         except Exception:
-            print("connection error")
+            logging.error("connection error")
 
     def get_ents_from_community(self, node_list: List[int]) -> DataFrame:
         def aggregate_entities(tx, node_list: List[int]) -> DataFrame:
@@ -41,20 +54,16 @@ class Analyzer:
         return values
     
     def _create_modularity_projection(self, selections: List[str]) -> Graph:
-        query = """
-            MATCH (source: Article)-[r:SIMILARITY]-(target: Article)
-            WHERE source.filename IN $selections AND source.communityId IS NOT NULL AND target.communityId IS NOT NULL
-            RETURN gds.graph.project('Modularity',source,target,{ relationshipProperties: r { .cosinus } }, {undirectedRelationshipTypes: ['*'], nodeProperties: 'communityId'})"""
         try:
             graph, _ = self.gds_driver.graph.cypher.project(
-                query,
+                GRAPH_PROJECTION_FOR_MODULARITY_QUERY,
                 database='neo4j',
                 selections=selections
             )
         except Exception:
             self.gds_driver.graph.drop('Modularity')
             graph, _ = self.gds_driver.graph.cypher.project(
-                query,
+                GRAPH_PROJECTION_FOR_MODULARITY_QUERY,
                 database='neo4j',
                 selections=selections
             )
@@ -64,5 +73,5 @@ class Analyzer:
         graph = self._create_modularity_projection(selections)
         result = self.gds_driver.modularity.stream(graph,communityProperty='communityId', relationshipWeightProperty='cosinus')
         self.gds_driver.graph.drop(graph)
-        return result
+        return result.set_index('communityId',drop=True)
     

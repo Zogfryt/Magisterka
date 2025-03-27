@@ -6,6 +6,9 @@ from os import getenv
 from neo4j import GraphDatabase
 from graphdatascience import GraphDataScience
 from community_analyser import Analyzer
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 def init():
     if 'db_driver' not in session_state:
@@ -18,12 +21,14 @@ def init():
         session_state['cluster_driver'] = GraphClusterer(session_state['gds_driver'])
     if 'analyzer' not in session_state:
         session_state['analyzer'] = Analyzer(session_state['db_driver'], session_state['gds_driver'])
+    if 'analyzed_files' not in session_state:
+        session_state['analyzed_files'] = set()
     if 'nlp' not in session_state:
         try:
             import torch
             import spacy
-            print(torch.cuda.is_available())
+            logging.info(torch.cuda.is_available())
             spacy.require_gpu()
         except ImportError:
-            print('No GPU support, using cpu only')
+            logging.info('No GPU support, using cpu only')
         session_state['nlp'] = load('pl_core_news_lg')

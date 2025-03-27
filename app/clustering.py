@@ -5,7 +5,6 @@ from typing import List
 
 class GraphClusterer:
     gds_driver: GraphDataScience
-    graph: Graph
     def __init__(self, gds_driver: GraphDataScience):
         self.gds_driver = gds_driver
 
