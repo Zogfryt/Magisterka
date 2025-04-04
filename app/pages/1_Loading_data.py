@@ -39,11 +39,6 @@ if file is not None and load_button:
 if delete_choice is not None and delete_button:
     loader.delete_json(delete_choice)
     rerun()
-
-    
-    
-
-    
-[5921,5908,5886,5876,5824,5800,5760]        
+  
         
         
