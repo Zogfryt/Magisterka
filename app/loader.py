@@ -3,18 +3,21 @@ import logging
 from os import getenv
 from dataclasses_custom import Document, LinkVector
 from typing import List, Tuple, Dict, Tuple
+from itertools import chain
 
 logging.basicConfig(level=logging.INFO)
 
-EDGE_STRING = """MATCH (a:Article {url: $url, entry_number: $entry_number, filename: $filename})
-MATCH (e:Entity {entity: $entity, type: $type, filename: $filename})
+EDGE_STRING = """UNWIND $edges as edge
+MATCH (a:Article {url: edge.url, entry_number: edge.entry_number, filename: $filename})
+MATCH (e:Entity {entity: edge.entity, type: edge.type, filename: $filename})
 MERGE (e)-[r:USED_IN]-(a)
 ON CREATE SET r.count = 1
 ON MATCH SET r.count = r.count + 1"""
 
-SIMILARITY_EDGE_STRING = """MATCH (a:Article {url: $url1, entry_number: $entry_number1, filename: $filename})
-MATCH (b:Article {url: $url2, entry_number: $entry_number2, filename: $filename})
-MERGE (b)-[r:SIMILARITY {cosinus: $cosinus, jaccard: $jaccard}]-(a)
+SIMILARITY_EDGE_STRING = """UNWIND $edges as edge
+MATCH (a:Article {url: edge.url1, entry_number: edge.entry_number1, filename: $filename})
+MATCH (b:Article {url: edge.url2, entry_number: edge.entry_number2, filename: $filename})
+MERGE (b)-[r:SIMILARITY {cosinus: edge.cosinus, jaccard: edge.jaccard}]-(a)
 """
 
 class Neo4jExecutor:
@@ -43,76 +46,60 @@ class Neo4jExecutor:
                 return tx.run(
                 '''MATCH (e:Entity)
                 WHERE e.filename in $json_names
-                RETURN e.entity as entity
+                RETURN e.entity as entity, e.type as type
                 ''',
                 json_names=json_names)
             
-            return [record.value('entity') for record in list_entities(session)]
+            return [f"{record.value('entity')} ({record.value('type')})" for record in list_entities(session)]
 
 
     def load_data(self, docs: List[Document], similarity_edges: List[LinkVector], filename: str):
         logging.info("Loading to database") 
-        with self.driver.session() as session:
-            def create_article(tx, doc: Document):
-                return tx.run(
-                    "Merge (:Article {url: $url, title: $title, content: $content, lead_content: $lead_content, recipe_label: $recipe_label, tags: $tags, entry_number: $entry_number, filename: $filename})",
-                    url = doc.url,
-                    title=doc.title,
-                    content=doc.content,
-                    lead_content=doc.lead_content,
-                    recipe_label=doc.recipe_label,
-                    tags=doc.tags,
-                    entry_number=doc.entry_number,
-                    filename=filename
-                )
-            def create_entity(tx, ent: Tuple[str,str]):
-                return tx.run(
-                    "Merge (:Entity {entity: $entity, type: $type, filename: $filename})",
-                    entity=ent[0],
-                    type=ent[1],
-                    filename=filename
-                )
-                
-            def create_edge(tx, url: str, entity: Tuple[str,str], entry_number: int):
-                return tx.run(
-                    EDGE_STRING,
-                    url=url,
-                    entity=entity[0],
-                    entry_number=entry_number,
-                    type=entity[1],
-                    filename=filename
-                )
-                
-            def create_similarity_links(tx, url1: str, url2: str, entry_number1: str, entry_number2: str, filename: str, cosinus: float, jaccard: float):
-                return tx.run(
-                    SIMILARITY_EDGE_STRING,
-                    url1=url1,
-                    url2=url2,
-                    entry_number1=entry_number1,
-                    entry_number2=entry_number2,
-                    filename=filename,
-                    cosinus=cosinus,
-                    jaccard=jaccard
-                )
-            
-            for doc in docs:
-                session.execute_write(create_article,doc)
-                for ent in doc.entities:
-                    session.execute_write(create_entity,ent)
-                    session.execute_write(create_edge,doc.url,ent,doc.entry_number)
-            
-            for linkvector in similarity_edges:
-                session.execute_write(create_similarity_links,
-                                      linkvector.doc1.url,
-                                      linkvector.doc2.url,
-                                      linkvector.doc1.entry_number,
-                                      linkvector.doc2.entry_number,
-                                      filename,
-                                      linkvector.cosinus,
-                                      linkvector.jaccard)
+        docs_list = [{"url" : doc.url, 'title': doc.title, "content": doc.content, 'lead_content': doc.lead_content, "tags": doc.tags, 'entry_number': doc.entry_number, 'recipe_label': doc.recipe_label} for doc in docs]
+        ents, edges = [], []
+        for doc in docs:
+            for ent in doc.entities:
+                ents.append({"entity": ent[0], "type": ent[1]})
+                edges.append({"url": doc.url, 'entity': ent[0], 'type': ent[1], 'entry_number': doc.entry_number})
+        links = [{"url1": sim.doc1.url, "url2": sim.doc2.url, 'entry_number1': sim.doc1.entry_number, "entry_number2": sim.doc2.entry_number, "cosinus": sim.cosinus, 'jaccard': sim.jaccard} for sim in similarity_edges]
 
-                    
-                
+            
+        _, summary, _  = self.driver.execute_query(
+            """UNWIND $documents AS docs
+            Merge (:Article {url: docs.url, title: docs.title, content: docs.content, lead_content: docs.lead_content, recipe_label: docs.recipe_label, tags: docs.tags, entry_number: docs.entry_number, filename: $filename})""",
+            database_="neo4j",
+            documents=docs_list,
+            filename=filename
+        )
+        logging.info(f"Uploading documents summary: {summary.counters}")
+
+        _, summary, _ = self.driver.execute_query(
+            """UNWIND $ents as ent
+            Merge (:Entity {entity: ent.entity, type: ent.type, filename: $filename})""",
+            database_="neo4j",
+            ents=ents,
+            filename=filename
+        )
+        logging.info(f"Uploading entities summary: {summary.counters}")
+
+        _, summary, _ = self.driver.execute_query(
+            EDGE_STRING,
+            database_="neo4j",
+            edges=edges,
+            filename=filename
+        )
+
+        logging.info(f"Uploading entity edges summary: {summary.counters}")
+
+        _, summary, _ = self.driver.execute_query(
+            SIMILARITY_EDGE_STRING,
+            database_="neo4j",
+            edges=links,
+            filename=filename
+        )
+
+        logging.info(f"Uploading document similarity edges summary: {summary.counters}")
+
     def delete_json(self, json_name: str):
         with self.driver.session() as session:
             def delete_articles(tx):

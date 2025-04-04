@@ -7,6 +7,18 @@ from spacy import Language
 
 logging.basicConfig(level=logging.INFO)
 
+ENTITY_TYPE_DICT = {
+    'orgName' : 'organization',
+    'persName' : 'person',
+    'geogName' : 'geogname',
+    'placeName' : 'location'
+}
+
+BLACK_LIST = {
+    'm.in.',
+    'm.in.,'
+}
+
 def json_to_dict(content: str) -> List[Document]:
     data = json.loads(content)
     texts: List[Document] = []
@@ -50,7 +62,9 @@ def json_with_ner_to_dict(content: str) -> List[Document]:
 def _extract_ents_from_dict(ents: List[Dict[str,Dict[str,int]|str]]) -> List[Tuple[str,str]]:
     final_list = []
     for ent in ents:
-        final_list.extend([(ent['name'],ent['category'].lower())]*len(ent['locations']))
+        entity = ent['name'].lower().strip()
+        if entity not in BLACK_LIST:
+            final_list.extend([(entity,ent['category'].lower())]*len(ent['locations']))
     return final_list
         
         
@@ -66,6 +80,7 @@ def get_ners(doc: Document, nlp: Language) -> List[Tuple[str,str]]:
 def _list_and_filter_entities(ents: List[Span]) -> List[Tuple[str,str]]:
     out: List[Tuple[str,str]] = []
     for ent in ents:
-        if len(ent.lemma_) > 2 and ent.label_ not in ['date','time']:
-            out.append((ent.lemma_, ent.label_))
+        entity = ent.lemma_.lower().strip()
+        if len(entity) > 2 and ent.label_ not in ['date','time'] and entity not in BLACK_LIST:
+            out.append((entity, ENTITY_TYPE_DICT[ent.label_]))
     return out

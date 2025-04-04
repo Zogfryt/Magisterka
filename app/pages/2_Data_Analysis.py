@@ -62,7 +62,7 @@ with entities:
     entity = multiselect('Write entity you want to search', session_state.get('ents',[]),disabled=len(session_state.get('ents',[]))==0,max_selections=1)
     search_button = button('Search',disabled=len(session_state.get('ents',[]))==0)
     if len(entity) == 1 and search_button:
-        counts = loader.get_linked_ners(entity[0],selections)
+        counts = loader.get_linked_ners(entity[0].split()[0],selections)
         entity_plot(counts)
         category_plot(counts)
         combined_plot(counts)
