@@ -7,8 +7,7 @@ import logging
 
 ENTITY_GROUP_QUERY="""
 MATCH (e:Entity)-[r:USED_IN]->(a:Article)
-MATCH (e)-[rr:USED_IN]->(b:Article)
-WHERE id(a) <> id(b) and id(a) in $communityNodes and id(b) in $communityNodes
+WHERE id(a) in $communityNodes
 WITH e, sum(r.count) as entityCount
 RETURN e{.entity, entityCount}
 """

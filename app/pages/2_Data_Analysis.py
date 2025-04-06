@@ -1,4 +1,4 @@
-from streamlit import multiselect, session_state, text_input, button, plotly_chart, tabs, dataframe, selectbox, metric, columns
+from streamlit import multiselect, session_state, text_input, button, plotly_chart, tabs, dataframe, selectbox, metric, columns, error
 from shared import init
 from loader import Neo4jExecutor
 import plotly.express as px
@@ -59,8 +59,15 @@ entities, clustering = tabs(['entities', 'clustering'])
 with entities:
     if select_btn:
         session_state['ents'] = loader.get_all_ners(selections)
+        session_state['ents_all'] = loader.get_ners_count(selections)
+    ents_all = session_state.get('ents_all', DataFrame({"entityName": [], 'count': []})).sort_values('count',ascending=False)
+    fig = px.bar(ents_all.iloc[:30], x='entityName', y='count', title="Most frequent entities in the database")
+    fig = fig.update_xaxes(tickangle=45)
+    plotly_chart(fig)
+    
     entity = multiselect('Write entity you want to search', session_state.get('ents',[]),disabled=len(session_state.get('ents',[]))==0,max_selections=1)
     search_button = button('Search',disabled=len(session_state.get('ents',[]))==0)
+    
     if len(entity) == 1 and search_button:
         counts = loader.get_linked_ners(entity[0].split()[0],selections)
         entity_plot(counts)
