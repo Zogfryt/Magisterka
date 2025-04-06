@@ -1,9 +1,8 @@
 from neo4j import Result, Driver
 import logging
-from os import getenv
 from dataclasses_custom import Document, LinkVector
 from typing import List, Tuple, Dict, Tuple
-from itertools import chain
+from pandas import DataFrame
 
 logging.basicConfig(level=logging.INFO)
 
@@ -51,6 +50,19 @@ class Neo4jExecutor:
                 json_names=json_names)
             
             return [f"{record.value('entity')} ({record.value('type')})" for record in list_entities(session)]
+        
+    def get_ners_count(self, json_names: List[str]) -> DataFrame:
+        records = self.driver.execute_query(
+            """MATCH (e: Entity)-[r: USED_IN]->(a:Article)
+            WHERE e.filename in $json_names
+            RETURN e.entity AS entity, SUM(r.count) AS count, e.type as type""",
+            database_='neo4j',
+            json_names=json_names
+        )[0]
+
+        df = DataFrame([record.data() for record in records])
+        df['entityName'] = df['entity'] + '(' + df['type'] + ')'
+        return df.drop(['entity','type'], axis=1)
 
 
     def load_data(self, docs: List[Document], similarity_edges: List[LinkVector], filename: str):
