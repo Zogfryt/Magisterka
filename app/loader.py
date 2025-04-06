@@ -1,9 +1,7 @@
 from neo4j import Result, Driver
 import logging
-from os import getenv
 from dataclasses_custom import Document, LinkVector
 from typing import List, Tuple, Dict, Tuple
-from itertools import chain
 
 logging.basicConfig(level=logging.INFO)
 
