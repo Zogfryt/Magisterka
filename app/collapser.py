@@ -50,7 +50,7 @@ def create_similarity_links(documents: List[Document]) -> List[LinkVector]:
     logging.info("Calculating Distances")
     vectors = []
     for doc1, doc2 in tqdm(product(documents,documents)):
-        if doc1.url != doc2.url or doc1.entry_number != doc2.entry_number:
+        if doc1.url != doc2.url:
             jacc, cos = calculate_distances(doc1.entities,doc2.entities)
             if jacc * cos > 0:
                 vectors.append(

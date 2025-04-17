@@ -3,21 +3,30 @@ import logging
 from dataclasses_custom import Document, LinkVector
 from typing import List, Tuple, Dict, Tuple
 from pandas import DataFrame
+from itertools import chain
 
 logging.basicConfig(level=logging.INFO)
 
+# EDGE_STRING = """UNWIND $edges as edge
+# MATCH (a:Article {url: edge.url, filename: $filename})
+# MATCH (e:Entity {entity: edge.entity, type: edge.type, filename: $filename})
+# MERGE (e)-[r:USED_IN]-(a)
+# ON CREATE SET r.count = 1
+# ON MATCH SET r.count = r.count + 1"""
+
 EDGE_STRING = """UNWIND $edges as edge
-MATCH (a:Article {url: edge.url, entry_number: edge.entry_number, filename: $filename})
-MATCH (e:Entity {entity: edge.entity, type: edge.type, filename: $filename})
+MATCH (a:Article {url: edge.doc_url, filename: $filename})
+MATCH (e:Entity {entity: edge.ent_name, type: edge.ent_type, filename: $filename})
 MERGE (e)-[r:USED_IN]-(a)
-ON CREATE SET r.count = 1
-ON MATCH SET r.count = r.count + 1"""
+ON CREATE SET r.count = edge.size
+ON MATCH SET r.count = r.count + edge.size"""
 
 SIMILARITY_EDGE_STRING = """UNWIND $edges as edge
-MATCH (a:Article {url: edge.url1, entry_number: edge.entry_number1, filename: $filename})
-MATCH (b:Article {url: edge.url2, entry_number: edge.entry_number2, filename: $filename})
+MATCH (a:Article {url: edge.url1, filename: $filename})
+MATCH (b:Article {url: edge.url2, filename: $filename})
 MERGE (b)-[r:SIMILARITY {cosinus: edge.cosinus, jaccard: edge.jaccard}]-(a)
 """
+
 
 class Neo4jExecutor:
     
@@ -67,18 +76,17 @@ class Neo4jExecutor:
 
     def load_data(self, docs: List[Document], similarity_edges: List[LinkVector], filename: str):
         logging.info("Loading to database") 
-        docs_list = [{"url" : doc.url, 'title': doc.title, "content": doc.content, 'lead_content': doc.lead_content, "tags": doc.tags, 'entry_number': doc.entry_number, 'recipe_label': doc.recipe_label} for doc in docs]
-        ents, edges = [], []
+        docs_list = [{"url" : doc.url, 'title': doc.title, "content": doc.content, 'lead_content': doc.lead_content, "tags": doc.tags, 'recipe_label': doc.recipe_label} for doc in docs]
+        ents = []
         for doc in docs:
             for ent in doc.entities:
                 ents.append({"entity": ent[0], "type": ent[1]})
-                edges.append({"url": doc.url, 'entity': ent[0], 'type': ent[1], 'entry_number': doc.entry_number})
-        links = [{"url1": sim.doc1.url, "url2": sim.doc2.url, 'entry_number1': sim.doc1.entry_number, "entry_number2": sim.doc2.entry_number, "cosinus": sim.cosinus, 'jaccard': sim.jaccard} for sim in similarity_edges]
+        links = [{"url1": sim.doc1.url, "url2": sim.doc2.url, "cosinus": sim.cosinus, 'jaccard': sim.jaccard} for sim in similarity_edges]
 
             
         _, summary, _  = self.driver.execute_query(
             """UNWIND $documents AS docs
-            Merge (:Article {url: docs.url, title: docs.title, content: docs.content, lead_content: docs.lead_content, recipe_label: docs.recipe_label, tags: docs.tags, entry_number: docs.entry_number, filename: $filename})""",
+            Merge (:Article {url: docs.url, title: docs.title, content: docs.content, lead_content: docs.lead_content, recipe_label: docs.recipe_label, tags: docs.tags, filename: $filename})""",
             database_="neo4j",
             documents=docs_list,
             filename=filename
@@ -97,7 +105,7 @@ class Neo4jExecutor:
         _, summary, _ = self.driver.execute_query(
             EDGE_STRING,
             database_="neo4j",
-            edges=edges,
+            edges=self._count_ents_connection_to_docs(docs),
             filename=filename
         )
 
@@ -160,4 +168,17 @@ RETURN e1, r
             communities=communities
         )
         logging.info(f"Updating copmmunity nodes status: {summary.counters}")
+        
+    def _count_ents_connection_to_docs(self,data: List[Document]) -> List[Dict[str,str]]:
+        df = DataFrame(self._doclist2dictlist(data))
+        df_grouped = df.groupby(df.columns, as_index=False).size()
+        return df_grouped.to_dict(orient='records')
+        
+
+    def _doclist2dictlist(self, data: List[Document]) -> List[Dict[str,str]]:
+        return list(chain.from_iterable(self._doc2entdict(doc) for doc in data))
+    
+    def _doc2entdict(self, doc: Document) -> List[Dict[str,str]]:
+        return [{"doc_url": doc.url, "ent_name": ent[0], "ent_type": ent[1]} for ent in doc.entities]
+    
     

@@ -29,7 +29,7 @@ def json_to_dict(content: str) -> List[Document]:
 
         url = result_data["url"]
         recipe_label = result_data["recipeLabel"]
-        for index, text_data in enumerate(result_data["results"]):
+        for text_data in result_data["results"]:
             texts.append(Document(
                 url = url,
                 title = text_data["title"],
@@ -37,7 +37,6 @@ def json_to_dict(content: str) -> List[Document]:
                 lead_content=text_data['leadContent'],
                 tags=[tag_row['tag'] for tag_row in text_data["tags"]],
                 recipe_label=recipe_label,
-                entry_number=index
             ))
     return texts
 
@@ -51,7 +50,6 @@ def json_with_ner_to_dict(content: str) -> List[Document]:
         url = text['url'],
         recipe_label = text['objectType'],
         title = text['title'],
-        entry_number=0,
         tags=text['sourceTags'] if text['sourceTags'] is not None else [],
         content=text['content'],
         lead_content='',
@@ -67,9 +65,6 @@ def _extract_ents_from_dict(ents: List[Dict[str,Dict[str,int]|str]]) -> List[Tup
             final_list.extend([(entity,ent['category'].lower())]*len(ent['locations']))
     return final_list
         
-        
-
-
 def get_ners(doc: Document, nlp: Language) -> List[Tuple[str,str]]:
     logging.info('Extracting entities')
     lead_content_ents = nlp(doc.lead_content).ents if doc.lead_content != '' else []
