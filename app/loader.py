@@ -27,6 +27,16 @@ MATCH (b:Article {url: edge.url2, filename: $filename})
 MERGE (b)-[r:SIMILARITY {cosinus: edge.cosinus, jaccard: edge.jaccard}]-(a)
 """
 
+CONNECTION_BETWEEN_ENTS_STRING = """
+MATCH (ee:Entity)-[rr:USED_IN]->(a)
+WHERE id(e) <> id(ee)
+RETURN e, count(a) as appearance, ee
+}
+MERGE (e)-[ne: APPEARANCE]-(ee)
+ON CREATE SET ne.count = appearance
+ON MATCH SET ne.count = ne.count
+"""
+
 
 class Neo4jExecutor:
     
