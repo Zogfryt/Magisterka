@@ -1,7 +1,7 @@
 from neo4j import Result, Driver
 import logging
 from dataclasses_custom import Document, LinkVector
-from typing import List, Tuple, Dict, Tuple
+from typing import Literal
 from pandas import DataFrame
 from itertools import chain
 from collections import Counter
@@ -33,7 +33,7 @@ class Neo4jExecutor:
         except Exception:
             logging.error("connection error")
 
-    def get_files(self) -> List[str]:
+    def get_files(self) -> list[str]:
         with self.driver.session() as session:
             def list_json_files(tx) -> Result:
                 return tx.run(
@@ -42,7 +42,7 @@ class Neo4jExecutor:
             
             return [record.value('file') for record in list_json_files(session)][0]
         
-    def get_all_ners(self, json_names: List[str]) -> List[str]:
+    def get_all_ners(self, json_names: list[str]) -> list[str]:
         with self.driver.session() as session:
             def list_entities(tx) -> Result:
                 return tx.run(
@@ -54,7 +54,7 @@ class Neo4jExecutor:
             
             return [f"{record.value('entity')} ({record.value('type')})" for record in list_entities(session)]
         
-    def get_ners_count(self, json_names: List[str]) -> DataFrame:
+    def get_ners_count(self, json_names: list[str]) -> DataFrame:
         records = self.driver.execute_query(
             """MATCH (e: Entity)-[r: USED_IN]->(a:Article)
             WHERE e.filename in $json_names
@@ -68,7 +68,7 @@ class Neo4jExecutor:
         return df.drop(['entity','type'], axis=1)
 
 
-    def load_data(self, docs: List[Document], similarity_edges: List[LinkVector], filename: str):
+    def load_data(self, docs: list[Document], similarity_edges: list[LinkVector], filename: str):
         logging.info("Loading to database") 
 
         _, summary, _  = self.driver.execute_query(
@@ -118,7 +118,7 @@ class Neo4jExecutor:
             session.execute_write(delete_articles)
             session.execute_write(delete_entities)
             
-    def get_linked_ners(self, entity: str, files: List[str]):
+    def get_linked_ners(self, entity: str, files: list[str]):
         with self.driver.session() as session:
             def list_json_files(tx) -> Result:
                 return tx.run(
@@ -132,25 +132,36 @@ RETURN e1, r
                 entity=entity,
                 files=files
                 )
-            return_dict: Dict[Tuple[str,str], int]= dict()
+            return_dict: dict[tuple[str,str], int]= dict()
             
             for record in list_json_files(session):
                 key=(record[0]['entity'],record[0]['type'])
                 return_dict[key] = return_dict.get(key,0) + record[1]['count']
             return return_dict
         
-    def update_with_communities(self, communities: List[Dict[str,str]]):
-        records, summary, keys  = self.driver.execute_query(
-            """UNWIND $communities as data
-               MATCH (a: Article)
-               WHERE id(a) = toInteger(data.nodeId)
-               SET a.communityId = data.communityId""",
-            database_="neo4j",
-            communities=communities
-        )
-        logging.info(f"Updating copmmunity nodes status: {summary.counters}")
+    def update_with_communities(self, communities: list[dict[str,str]], mode: Literal['articles','entities']):
+        if mode == 'articles':
+            _, summary, _  = self.driver.execute_query(
+                """UNWIND $communities as data
+                MATCH (a: Article)
+                WHERE id(a) = toInteger(data.nodeId)
+                SET a.communityId = data.communityId""",
+                database_="neo4j",
+                communities=communities
+            )
+            logging.info(f"Updating community nodes in {mode}. Status: {summary.counters}")
+        else:
+            _, summary, _  = self.driver.execute_query(
+                """UNWIND $communities as data
+                MATCH (e: Entity)
+                WHERE id(e) = toInteger(data.nodeId)
+                SET e.communityId = data.communityId""",
+                database_="neo4j",
+                communities=communities
+            )
+            logging.info(f"Updating community nodes in {mode}. Status: {summary.counters}")
 
-    def _get_entity_links(self, docs: List[Document]) -> List[Dict[str,str|float]]:
+    def _get_entity_links(self, docs: list[Document]) -> list[dict[str,str|float]]:
         summed_counter = sum((doc.return_tuple_connections() for doc in docs),Counter())
         summed_dict = dict(summed_counter)
 
