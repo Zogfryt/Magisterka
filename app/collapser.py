@@ -1,12 +1,11 @@
 from dataclasses_custom import Document, LinkVector
-from typing import List, Tuple, Dict
 from collections import Counter
 from itertools import chain, product
 import numpy as np
 from tqdm import tqdm
 import logging
 
-def __ner_vector(counts: Counter, map: Dict[Tuple[str,str],int]) -> np.ndarray:
+def __ner_vector(counts: Counter, map: dict[tuple[str,str],int]) -> np.ndarray:
     shape = len(map)
     vec = np.zeros(shape,dtype=float)
     
@@ -38,7 +37,7 @@ def __calculate_jaccard(count1: Counter, count2: Counter) -> float:
     return top / bottom
 
 
-def calculate_distances(ents1: List[Tuple[str,str]], ents2: List[Tuple[str,str]]) -> Tuple[float,float]:
+def calculate_distances(ents1: dict[tuple[str,str],int], ents2: dict[tuple[str,str],int]) -> tuple[float,float]:
     counter_ents1 = Counter(ents1)
     counter_ents2 = Counter(ents2)
             
@@ -46,11 +45,11 @@ def calculate_distances(ents1: List[Tuple[str,str]], ents2: List[Tuple[str,str]]
     return __calculate_jaccard(counter_ents1, counter_ents2), \
     __calculate_cosine(counter_ents1, counter_ents2)
     
-def create_similarity_links(documents: List[Document]) -> List[LinkVector]:
+def create_similarity_links(documents: list[Document]) -> list[LinkVector]:
     logging.info("Calculating Distances")
     vectors = []
     for doc1, doc2 in tqdm(product(documents,documents)):
-        if doc1.url != doc2.url or doc1.entry_number != doc2.entry_number:
+        if doc1.url != doc2.url:
             jacc, cos = calculate_distances(doc1.entities,doc2.entities)
             if jacc * cos > 0:
                 vectors.append(

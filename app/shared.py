@@ -21,8 +21,10 @@ def init():
         session_state['cluster_driver'] = GraphClusterer(session_state['gds_driver'])
     if 'analyzer' not in session_state:
         session_state['analyzer'] = Analyzer(session_state['db_driver'], session_state['gds_driver'])
-    if 'analyzed_files' not in session_state:
-        session_state['analyzed_files'] = set()
+    if 'analyzed_files_articles' not in session_state:
+        session_state['analyzed_files_articles'] = set()
+    if 'analyzed_files_entities' not in session_state:
+        session_state['analyzed_files_entities'] = set()
     if 'nlp' not in session_state:
         try:
             import torch
