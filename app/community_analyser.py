@@ -9,14 +9,14 @@ ENTITY_GROUP_QUERY="""
 MATCH (e:Entity)-[r:USED_IN]->(a:Article)
 WHERE id(a) in $communityNodes
 WITH e, sum(r.count) as entityCount
-RETURN e{.entity, entityCount}
+RETURN e{.entity, .type, entityCount}
 """
 
 ENTITY_GROUP_QUERY_BY_ENTITY="""
 MATCH (e:Entity)-[r:USED_IN]->(a:Article)
 WHERE id(e) in $communityNodes
 WITH e, sum(r.count) as entityCount
-RETURN e{.entity, entityCount}
+RETURN e{.entity, .type, entityCount}
 """
 
 GRAPH_PROJECTION_FOR_MODULARITY_QUERY = '''
@@ -63,7 +63,7 @@ class Analyzer:
                 communityNodes=node_list
             )
             all_records =  list(chain(*[record.values() for record in result]))
-            return DataFrame(all_records).groupby('entity').sum()
+            return DataFrame(all_records).groupby(['entity','type'],as_index=False).sum()
     
         
         with self.neo4j_driver.session() as session:

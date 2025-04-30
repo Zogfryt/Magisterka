@@ -65,8 +65,13 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         show_statistics(len(aggregated_df.loc[choice,'nodeId']),df_modularities.loc[choice, 'modularity'])
         result = analyzer.get_ents_from_community(aggregated_df.loc[choice,'nodeId'], mode)
         result = result.sort_values('entityCount',ascending=False)
-        fig = px.bar(result.iloc[:20],title='Top 20 entities')
+        fig = px.bar(result.iloc[:20],x='entity',y='entityCount',title='Top 20 entities')
         plotly_chart(fig)
+        res = result[['type','entityCount']].groupby('type', as_index=False).sum().sort_values('entityCount',ascending=False)
+        fig = px.bar(res,x='type',y='entityCount',title='Top entity types')
+        fig.update_xaxes(tickangle=45)
+        plotly_chart(fig, key=f'plot_entity_type_{mode}')
+        
 
 init()
 

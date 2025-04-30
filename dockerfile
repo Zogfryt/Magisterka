@@ -2,17 +2,19 @@
 
 FROM python:3.12-bullseye as builder
 
-RUN pip install poetry==1.4.2
-
 ENV POETRY_NO_INTERACTION=1 \
     POETRY_VIRTUALENVS_IN_PROJECT=1 \
     POETRY_VIRTUALENVS_CREATE=1 \
-    POETRY_CACHE_DIR=/tmp/poetry_cache
+    POETRY_HOME="/opt/poetry"
+
+RUN --mount=type=cache,target=/root/.cache \
+    curl -sSL https://install.python-poetry.org | python -
 
 COPY pyproject.toml ./
 RUN touch README.md
 
-RUN poetry install --without cuda --no-root && rm -rf $POETRY_CACHE_DIR
+RUN  --mount=type=cache,target=/root/.cache \
+    /opt/poetry/bin/poetry install --without cuda --no-root
 
 FROM python:3.12-slim-bullseye as runtime
 
@@ -24,7 +26,6 @@ COPY ./app /app
 COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 
 RUN /.venv/bin/python -m spacy download pl_core_news_lg
-RUN echo aga
 
 EXPOSE 8501
 
