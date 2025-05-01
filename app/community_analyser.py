@@ -7,16 +7,31 @@ import logging
 
 ENTITY_GROUP_QUERY="""
 MATCH (e:Entity)-[r:USED_IN]->(a:Article)
-WHERE id(a) in $communityNodes
+WHERE a.communityId = $communityId
 WITH e, sum(r.count) as entityCount
 RETURN e{.entity, .type, entityCount}
 """
 
 ENTITY_GROUP_QUERY_BY_ENTITY="""
 MATCH (e:Entity)-[r:USED_IN]->(a:Article)
-WHERE id(e) in $communityNodes
+WHERE e.communityId = $communityId
 WITH e, sum(r.count) as entityCount
 RETURN e{.entity, .type, entityCount}
+"""
+
+TAG_COUNTER_FOR_ENTITY_COMMUNITY="""
+MATCH (e:Entity)-[r:USED_IN]->(a:Article)
+WHERE e.communityId = $communityId
+WITH DISTINCT a
+UNWIND a.tags as tag
+RETURN tag, count(tag) as tagCount
+"""
+
+TAG_COUNTER_FOR_ARTICLE_COMMUNITY="""
+MATCH (a:Article)
+WHERE a.communityId = $communityId
+UNWIND a.tags as tag
+RETURN tag, count(tag) as tagCount
 """
 
 GRAPH_PROJECTION_FOR_MODULARITY_QUERY = '''
@@ -56,20 +71,24 @@ class Analyzer:
         except Exception:
             logging.error("connection error")
 
-    def get_ents_from_community(self, node_list: list[int], mode: Literal['articles','entities']) -> DataFrame:
-        def aggregate_entities(tx, node_list: list[int], mode: Literal['articles','entities']) -> DataFrame:
-            result: Result =  tx.run(
-                ENTITY_GROUP_QUERY if mode == 'articles' else ENTITY_GROUP_QUERY_BY_ENTITY,
-                communityNodes=node_list
-            )
-            all_records =  list(chain(*[record.values() for record in result]))
-            return DataFrame(all_records).groupby(['entity','type'],as_index=False).sum()
+    def get_ents_from_community(self, communityId: int, mode: Literal['articles','entities']) -> DataFrame:    
+        records, _, _ = self.neo4j_driver.execute_query(
+            ENTITY_GROUP_QUERY if mode == 'articles' else ENTITY_GROUP_QUERY_BY_ENTITY,
+            communityId=communityId,
+            database_='neo4j'
+        )
     
-        
-        with self.neo4j_driver.session() as session:
-            values: DataFrame = session.execute_read(aggregate_entities, node_list, mode)
-        
-        return values
+        all_records =  list(chain(*[record.values() for record in records]))
+        return DataFrame(all_records).groupby(['entity','type'],as_index=False).sum()
+    
+    def get_article_tags_from_community(self, communityId: int, mode: Literal['articles','entities']) -> DataFrame:
+        records, _, _  = self.neo4j_driver.execute_query(
+            TAG_COUNTER_FOR_ARTICLE_COMMUNITY if mode == 'articles' else TAG_COUNTER_FOR_ENTITY_COMMUNITY,
+            communityId=communityId,
+            database_='neo4j'
+        )
+        all_records =  [record.data() for record in records]
+        return DataFrame(all_records)
     
     def _create_modularity_projection(self, selections: list[str], mode: Literal['articles','entities']) -> Graph:
         query = GRAPH_PROJECTION_FOR_MODULARITY_QUERY if mode == 'articles' else GRAPH_PROJECTION_FOR_MODULARITY_QUERY_ENTS

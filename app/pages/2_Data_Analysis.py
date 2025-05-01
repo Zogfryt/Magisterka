@@ -49,6 +49,8 @@ def show_statistics(n_nodes: int, modularity_score: float):
     col2.metric("Modularity score", f"{modularity_score: .3f}")
 
 def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed: bool):
+    analyzer: Analyzer = session_state['analyzer']
+    cluster: GraphClusterer = session_state['cluster_driver']
     graph_name = 'DocumentWithDistance' if mode == 'articles' else 'EntitiesWithCoExistance'
     if select_btn and files_changed:
         session_state[f'analyzed_files_{mode}'] = set(selections)
@@ -59,25 +61,26 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         session_state[f'modularities_{mode}'] = analyzer.calculate_modularity(selections, mode)
     df = session_state.get(f'leiden_result_{mode}',DataFrame({'communityId': [], 'nodeId': []}))
     aggregated_df = df.groupby('communityId').aggregate({'nodeId': list}) 
-    choice = selectbox(label='Choose community ID', options=aggregated_df.index)
+    choice = selectbox(label='Choose community ID', options=aggregated_df.index, key=f'community_selectbox_{mode}')
     if choice is not None:
         df_modularities: DataFrame = session_state[f'modularities_{mode}']
         show_statistics(len(aggregated_df.loc[choice,'nodeId']),df_modularities.loc[choice, 'modularity'])
-        result = analyzer.get_ents_from_community(aggregated_df.loc[choice,'nodeId'], mode)
+        result = analyzer.get_ents_from_community(int(choice), mode)
         result = result.sort_values('entityCount',ascending=False)
+        result_tags = analyzer.get_article_tags_from_community(int(choice), mode)
         fig = px.bar(result.iloc[:20],x='entity',y='entityCount',title='Top 20 entities')
         plotly_chart(fig)
         res = result[['type','entityCount']].groupby('type', as_index=False).sum().sort_values('entityCount',ascending=False)
         fig = px.bar(res,x='type',y='entityCount',title='Top entity types')
         fig.update_xaxes(tickangle=45)
         plotly_chart(fig, key=f'plot_entity_type_{mode}')
+        fig = px.bar(result_tags.sort_values('tagCount',ascending=False).iloc[:30],x='tag',y='tagCount',title='Top 30 tags in the comminuty')
+        fig.update_xaxes(tickangle=45)
+        plotly_chart(fig, key=f'plot_tag_type_{mode}')
         
 
 init()
-
 loader: Neo4jExecutor = session_state['loader']
-cluster: GraphClusterer = session_state['cluster_driver']
-analyzer: Analyzer = session_state['analyzer']
 selections = multiselect('Ask data from json file',loader.get_files(),[])
 files_changed_articles, files_changed_ents = has_files_changed(set(selections),'articles'), has_files_changed(set(selections),'entities')
 select_btn = button('Select')
