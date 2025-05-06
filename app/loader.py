@@ -42,18 +42,6 @@ class Neo4jExecutor:
             
             return [record.value('file') for record in list_json_files(session)][0]
         
-    def get_all_ners(self, json_names: list[str]) -> list[str]:
-        with self.driver.session() as session:
-            def list_entities(tx) -> Result:
-                return tx.run(
-                '''MATCH (e:Entity)
-                WHERE e.filename in $json_names
-                RETURN e.entity as entity, e.type as type
-                ''',
-                json_names=json_names)
-            
-            return [f"{record.value('entity')} ({record.value('type')})" for record in list_entities(session)]
-        
     def get_ners_count(self, json_names: list[str]) -> DataFrame:
         records = self.driver.execute_query(
             """MATCH (e: Entity)-[r: USED_IN]->(a:Article)
@@ -63,9 +51,7 @@ class Neo4jExecutor:
             json_names=json_names
         )[0]
 
-        df = DataFrame([record.data() for record in records])
-        df['entityName'] = df['entity'] + '(' + df['type'] + ')'
-        return df.drop(['entity','type'], axis=1)
+        return DataFrame([record.data() for record in records])
 
 
     def load_data(self, docs: list[Document], similarity_edges: list[LinkVector], filename: str):

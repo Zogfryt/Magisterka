@@ -1,4 +1,4 @@
-from streamlit import multiselect, session_state, text_input, button, plotly_chart, tabs, dataframe, selectbox, metric, columns, error
+from streamlit import multiselect, session_state, text_input, button, plotly_chart, tabs, dataframe, selectbox, metric, columns, error, slider
 from shared import init
 from loader import Neo4jExecutor
 import plotly.express as px
@@ -87,13 +87,28 @@ select_btn = button('Select')
 entities, clustering_articles, clustering_ents = tabs(['entities', 'clustering - articles', 'clustering - ents'])
 with entities:
     if select_btn:
-        session_state['ents'] = loader.get_all_ners(selections)
         session_state['ents_all'] = loader.get_ners_count(selections)
     ents_all = session_state.get('ents_all', DataFrame({"entityName": [], 'count': []})).sort_values('count',ascending=False)
+    ents_all['entityName'] = ents_all['entity'] + '(' + ents_all['type'] + ')'
     fig = px.bar(ents_all.iloc[:30], x='entityName', y='count', title="Most frequent entities in the database")
     fig = fig.update_xaxes(tickangle=45)
     plotly_chart(fig)
     
+    ents_type = ents_all[['type','count']].groupby('type',as_index=False).sum()
+    fig = px.bar(ents_type,x='type',y='count',title="Counts of entities type across entire corpus.")
+    plotly_chart(fig)
+    
+    ents_min, ents_max = ents_all['count'].min(), ents_all['count'].max()
+    selected_min, selected_max = slider("Choose max and min for entities counts.",
+                              min_value=ents_min,
+                              max_value=ents_max,
+                              value=(ents_min,ents_max)
+                              )
+    fig = px.histogram(ents_all.loc[(ents_all['count'] >= selected_min) & (ents_all['count'] <= selected_max)],
+                       x='count',
+                       title='Selected slice of histogram of entities count')
+    plotly_chart(fig)
+     
     entity = multiselect('Write entity you want to search', session_state.get('ents',[]),disabled=len(session_state.get('ents',[]))==0,max_selections=1)
     search_button = button('Search',disabled=len(session_state.get('ents',[]))==0)
     
