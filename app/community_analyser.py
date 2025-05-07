@@ -5,6 +5,7 @@ from itertools import chain
 from pandas import DataFrame
 import logging
 from numpy import select
+from streamlit import dataframe
 
 ENTITY_GROUP_QUERY="""
 MATCH (e:Entity)-[r:USED_IN]->(a:Article)
@@ -63,14 +64,19 @@ ARTICLE_TAGS_COMMUNITY_MINING_QUERY = '''
 MATCH (a:Article)
 WHERE a.filename IN $selections 
 UNWIND a.tags as tag
-RETURN tag, count(a.communityId) as n_appearences, count(DISTINCT a.communityId) as n_communities
+RETURN tag, count(a.communityId) as n_appearances, count(DISTINCT a.communityId) as n_communities
 '''
 
 ARTICLE_TAGS_COMMUNITY_MINING_QUERY_ENTITY = '''
 MATCH (a:Article)-[r:USED_IN]-(e:Entity)
 WHERE a.filename IN $selections AND e.filename IN $selections
+WITH a, COLLECT(DISTINCT e.communityId) as articleCommunities
 UNWIND a.tags as tag
-RETURN tag, count(DISTINCT e.communityId) as n_communities, count(e.communityId) as n_appearences
+WITH tag, COUNT(*) as n_appearances, COLLECT(articleCommunities) as allCommunitiesPerTag
+UNWIND allCommunitiesPerTag as communities
+UNWIND communities as community
+WITH tag, n_appearances, COLLECT(DISTINCT community) as distinctCommunities
+RETURN tag, SIZE(distinctCommunities) as n_communities, n_appearances
 '''
 
 
@@ -146,11 +152,10 @@ class Analyzer:
         
         df = DataFrame([record.data() for record in records])
         conditions = [
-            (df['n_appearences'] > 1) & (df['n_communities'] > 1),
-            (df['n_appearences'] > 1) & (df['n_communities'] == 1)
+            (df['n_appearances'] > 1) & (df['n_communities'] > 1),
+            (df['n_appearances'] > 1) & (df['n_communities'] == 1)
         ]
         
-        choices = ['B','A']
-        
-        df['class'] = select(conditions,choices, default='C')
-        return df.drop(['n_appearences','n_communities'],axis=1)
+        df['class'] = select(conditions,['B','A'], default='C')
+        # return df.drop(['n_appearances','n_communities'],axis=1)
+        return df

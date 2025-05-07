@@ -1,4 +1,4 @@
-from streamlit import session_state
+from streamlit import session_state, set_page_config
 from loader import Neo4jExecutor
 from spacy import load
 from clustering import GraphClusterer
@@ -11,6 +11,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 def init():
+    set_page_config(layout="wide")
     if 'db_driver' not in session_state:
         session_state['db_driver'] = GraphDatabase.driver(getenv('DATABASE_URL'),auth=(getenv('DATABASE_USR'),getenv('DATABASE_PASSWORD'))) 
     if 'gds_driver' not in session_state:

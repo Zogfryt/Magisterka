@@ -51,12 +51,12 @@ def show_statistics(n_nodes: int, modularity_score: float):
 def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed: bool):
     analyzer: Analyzer = session_state['analyzer']
     cluster: GraphClusterer = session_state['cluster_driver']
-    tag_map: DataFrame = session_state[]
     graph_name = 'DocumentWithDistance' if mode == 'articles' else 'EntitiesWithCoExistance'
     if select_btn and files_changed:
         session_state[f'analyzed_files_{mode}'] = set(selections)
         session_state[f'graph_{mode}'] = cluster.create_graph_projection(selections,graph_name)
         session_state[f'leiden_result_{mode}'] = cluster.leiden_cluster(session_state[f'graph_{mode}'])
+        session_state[f'tag_class_mapping_{mode}'] = analyzer.get_article_tags_class(selections, mode)
         cluster.delete_graph_projection(graph_name)
         loader.update_with_communities(session_state[f'leiden_result_{mode}'][['nodeId','communityId']].to_dict(orient='records'),mode)    
         session_state[f'modularities_{mode}'] = analyzer.calculate_modularity(selections, mode)
@@ -78,7 +78,17 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         fig = px.bar(result_tags.sort_values('tagCount',ascending=False).iloc[:30],x='tag',y='tagCount',title='Top 30 tags in the comminuty')
         fig.update_xaxes(tickangle=45)
         plotly_chart(fig, key=f'plot_tag_type_{mode}')
-        
+        tag_map: DataFrame = session_state[f'tag_class_mapping_{mode}']
+        classified_tags = result_tags.merge(tag_map,left_on='tag',right_on='tag',how='left')
+        col1, col2, col3, col4 = columns(4)
+        fig = px.pie(classified_tags,values='tagCount',names='class',title='Tags distribution in the community')
+        col1.plotly_chart(fig, key=f'plot_tag_class_{mode}')
+        col2.text('A class tags within cluster')
+        col2.dataframe(classified_tags.loc[classified_tags['class'] == 'A'].sort_values('tagCount',ascending=False))
+        col3.text('B class tags within cluster')
+        col3.dataframe(classified_tags.loc[classified_tags['class'] == 'B'].sort_values('tagCount',ascending=False))
+        col4.text('C class tags within cluster')
+        col4.dataframe(classified_tags.loc[classified_tags['class'] == 'C'].sort_values('tagCount',ascending=False))
 
 init()
 loader: Neo4jExecutor = session_state['loader']
@@ -87,9 +97,6 @@ selections = multiselect('Ask data from json file',loader.get_files(),[])
 files_changed_articles, files_changed_ents = has_files_changed(set(selections),'articles'), has_files_changed(set(selections),'entities')
 select_btn = button('Select')
 entities, clustering_articles, clustering_ents = tabs(['entities', 'clustering - articles', 'clustering - ents'])
-if select_btn:
-    session_state['tag_class_mapping_articles'] = analyzer.get_article_tags_class(selections, mode='articles')
-    session_state['tag_class_mapping_entity'] = analyzer.get_article_tags_class(selections, mode='entities')
 with entities:
     if select_btn:
         session_state['ents_all'] = loader.get_ners_count(selections)
