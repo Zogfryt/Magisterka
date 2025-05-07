@@ -1,4 +1,4 @@
-from streamlit import multiselect, session_state, text_input, button, plotly_chart, tabs, dataframe, selectbox, metric, columns, error
+from streamlit import multiselect, session_state, text_input, button, plotly_chart, tabs, dataframe, selectbox, metric, columns, error, slider
 from shared import init
 from loader import Neo4jExecutor
 import plotly.express as px
@@ -51,6 +51,7 @@ def show_statistics(n_nodes: int, modularity_score: float):
 def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed: bool):
     analyzer: Analyzer = session_state['analyzer']
     cluster: GraphClusterer = session_state['cluster_driver']
+    tag_map: DataFrame = session_state[]
     graph_name = 'DocumentWithDistance' if mode == 'articles' else 'EntitiesWithCoExistance'
     if select_btn and files_changed:
         session_state[f'analyzed_files_{mode}'] = set(selections)
@@ -81,32 +82,38 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
 
 init()
 loader: Neo4jExecutor = session_state['loader']
+analyzer: Analyzer = session_state['analyzer']
 selections = multiselect('Ask data from json file',loader.get_files(),[])
 files_changed_articles, files_changed_ents = has_files_changed(set(selections),'articles'), has_files_changed(set(selections),'entities')
 select_btn = button('Select')
 entities, clustering_articles, clustering_ents = tabs(['entities', 'clustering - articles', 'clustering - ents'])
+if select_btn:
+    session_state['tag_class_mapping_articles'] = analyzer.get_article_tags_class(selections, mode='articles')
+    session_state['tag_class_mapping_entity'] = analyzer.get_article_tags_class(selections, mode='entities')
 with entities:
     if select_btn:
-        session_state['ents'] = loader.get_all_ners(selections)
         session_state['ents_all'] = loader.get_ners_count(selections)
     ents_all = session_state.get('ents_all', DataFrame({"entityName": [], 'count': []})).sort_values('count',ascending=False)
+    ents_all['entityName'] = ents_all['entity'] + '(' + ents_all['type'] + ')'
     fig = px.bar(ents_all.iloc[:30], x='entityName', y='count', title="Most frequent entities in the database")
     fig = fig.update_xaxes(tickangle=45)
     plotly_chart(fig)
     
-    # Add histogram for entity count distribution
-    fig_hist = px.histogram(ents_all, x='count', title="Distribution of entity counts",
-                           nbins=50, labels={'count': 'Number of occurrences'})
-    plotly_chart(fig_hist)
+    ents_type = ents_all[['type','count']].groupby('type',as_index=False).sum()
+    fig = px.bar(ents_type,x='type',y='count',title="Counts of entities type across entire corpus.")
+    plotly_chart(fig)
     
-    # Add histogram for entity count distribution up to 90th percentile
-    fig_hist_90 = px.histogram(ents_all[ents_all['count'] <= 50], 
-                              x='count', 
-                              title=f"Distribution of entity counts (up to max 50 occurrences)",
-                              nbins=30,
-                              labels={'count': 'Number of occurrences'})
-    plotly_chart(fig_hist_90)
-    
+    ents_min, ents_max = ents_all['count'].min(), ents_all['count'].max()
+    selected_min, selected_max = slider("Choose max and min for entities counts.",
+                              min_value=ents_min,
+                              max_value=ents_max,
+                              value=(ents_min,ents_max)
+                              )
+    fig = px.histogram(ents_all.loc[(ents_all['count'] >= selected_min) & (ents_all['count'] <= selected_max)],
+                       x='count',
+                       title='Selected slice of histogram of entities count')
+    plotly_chart(fig)
+     
     entity = multiselect('Write entity you want to search', session_state.get('ents',[]),disabled=len(session_state.get('ents',[]))==0,max_selections=1)
     search_button = button('Search',disabled=len(session_state.get('ents',[]))==0)
     
