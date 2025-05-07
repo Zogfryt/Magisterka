@@ -51,6 +51,7 @@ def show_statistics(n_nodes: int, modularity_score: float):
 def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed: bool):
     analyzer: Analyzer = session_state['analyzer']
     cluster: GraphClusterer = session_state['cluster_driver']
+    tag_map: DataFrame = session_state[]
     graph_name = 'DocumentWithDistance' if mode == 'articles' else 'EntitiesWithCoExistance'
     if select_btn and files_changed:
         session_state[f'analyzed_files_{mode}'] = set(selections)
@@ -81,10 +82,14 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
 
 init()
 loader: Neo4jExecutor = session_state['loader']
+analyzer: Analyzer = session_state['analyzer']
 selections = multiselect('Ask data from json file',loader.get_files(),[])
 files_changed_articles, files_changed_ents = has_files_changed(set(selections),'articles'), has_files_changed(set(selections),'entities')
 select_btn = button('Select')
 entities, clustering_articles, clustering_ents = tabs(['entities', 'clustering - articles', 'clustering - ents'])
+if select_btn:
+    session_state['tag_class_mapping_articles'] = analyzer.get_article_tags_class(selections, mode='articles')
+    session_state['tag_class_mapping_entity'] = analyzer.get_article_tags_class(selections, mode='entities')
 with entities:
     if select_btn:
         session_state['ents_all'] = loader.get_ners_count(selections)

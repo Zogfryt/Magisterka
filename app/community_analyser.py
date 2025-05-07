@@ -4,6 +4,7 @@ from typing import Literal
 from itertools import chain
 from pandas import DataFrame
 import logging
+from numpy import select
 
 ENTITY_GROUP_QUERY="""
 MATCH (e:Entity)-[r:USED_IN]->(a:Article)
@@ -58,6 +59,22 @@ target,
     relationshipProperties: r { .count }
 }, {undirectedRelationshipTypes: ['*']})'''
 
+ARTICLE_TAGS_COMMUNITY_MINING_QUERY = '''
+MATCH (a:Article)
+WHERE a.filename IN $selections 
+UNWIND a.tags as tag
+RETURN tag, count(a.communityId) as n_appearences, count(DISTINCT a.communityId) as n_communities
+'''
+
+ARTICLE_TAGS_COMMUNITY_MINING_QUERY_ENTITY = '''
+MATCH (a:Article)-[r:USED_IN]-(e:Entity)
+WHERE a.filename IN $selections AND e.filename IN $selections
+UNWIND a.tags as tag
+RETURN tag, count(DISTINCT e.communityId) as n_communities, count(e.communityId) as n_appearences
+'''
+
+
+
 class Analyzer:
     neo4j_driver: Driver
     gds_driver: GraphDataScience
@@ -87,8 +104,7 @@ class Analyzer:
             communityId=communityId,
             database_='neo4j'
         )
-        all_records =  [record.data() for record in records]
-        return DataFrame(all_records)
+        return DataFrame([record.data() for record in records])
     
     def _create_modularity_projection(self, selections: list[str], mode: Literal['articles','entities']) -> Graph:
         query = GRAPH_PROJECTION_FOR_MODULARITY_QUERY if mode == 'articles' else GRAPH_PROJECTION_FOR_MODULARITY_QUERY_ENTS
@@ -120,3 +136,21 @@ class Analyzer:
         self.gds_driver.graph.drop(graph)
         return result.set_index('communityId',drop=True)
     
+
+    def get_article_tags_class(self, selections: list[str], mode: Literal['articles','entities']) -> DataFrame:
+        records, _, _ = self.neo4j_driver.execute_query(
+            ARTICLE_TAGS_COMMUNITY_MINING_QUERY if mode == 'articles' else ARTICLE_TAGS_COMMUNITY_MINING_QUERY_ENTITY,
+            selections=selections,
+            database_='neo4j'
+        )
+        
+        df = DataFrame([record.data() for record in records])
+        conditions = [
+            (df['n_appearences'] > 1) & (df['n_communities'] > 1),
+            (df['n_appearences'] > 1) & (df['n_communities'] == 1)
+        ]
+        
+        choices = ['B','A']
+        
+        df['class'] = select(conditions,choices, default='C')
+        return df.drop(['n_appearences','n_communities'],axis=1)
