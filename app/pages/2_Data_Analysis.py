@@ -94,6 +94,19 @@ with entities:
     fig = fig.update_xaxes(tickangle=45)
     plotly_chart(fig)
     
+    # Add histogram for entity count distribution
+    fig_hist = px.histogram(ents_all, x='count', title="Distribution of entity counts",
+                           nbins=50, labels={'count': 'Number of occurrences'})
+    plotly_chart(fig_hist)
+    
+    # Add histogram for entity count distribution up to 90th percentile
+    fig_hist_90 = px.histogram(ents_all[ents_all['count'] <= 50], 
+                              x='count', 
+                              title=f"Distribution of entity counts (up to max 50 occurrences)",
+                              nbins=30,
+                              labels={'count': 'Number of occurrences'})
+    plotly_chart(fig_hist_90)
+    
     entity = multiselect('Write entity you want to search', session_state.get('ents',[]),disabled=len(session_state.get('ents',[]))==0,max_selections=1)
     search_button = button('Search',disabled=len(session_state.get('ents',[]))==0)
     
