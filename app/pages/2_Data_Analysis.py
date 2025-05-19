@@ -56,9 +56,9 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         session_state[f'analyzed_files_{mode}'] = set(selections)
         session_state[f'graph_{mode}'] = cluster.create_graph_projection(selections,graph_name)
         session_state[f'leiden_result_{mode}'] = cluster.leiden_cluster(session_state[f'graph_{mode}'])
+        loader.update_with_communities(session_state[f'leiden_result_{mode}'][['nodeId','communityId']].to_dict(orient='records'),mode) 
         session_state[f'tag_class_mapping_{mode}'] = analyzer.get_article_tags_class(selections, mode)
         cluster.delete_graph_projection(graph_name)
-        loader.update_with_communities(session_state[f'leiden_result_{mode}'][['nodeId','communityId']].to_dict(orient='records'),mode)    
         session_state[f'modularities_{mode}'] = analyzer.calculate_modularity(selections, mode)
     df = session_state.get(f'leiden_result_{mode}',DataFrame({'communityId': [], 'nodeId': []}))
     aggregated_df = df.groupby('communityId').aggregate({'nodeId': list}) 
@@ -79,6 +79,7 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         fig.update_xaxes(tickangle=45)
         plotly_chart(fig, key=f'plot_tag_type_{mode}')
         tag_map: DataFrame = session_state[f'tag_class_mapping_{mode}']
+        dataframe(tag_map)
         classified_tags = result_tags.merge(tag_map,left_on='tag',right_on='tag',how='left')
         col1, col2, col3, col4 = columns(4)
         fig = px.pie(classified_tags,values='tagCount',names='class',title='Tags distribution in the community')
