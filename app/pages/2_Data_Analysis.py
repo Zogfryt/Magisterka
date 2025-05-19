@@ -79,7 +79,6 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         fig.update_xaxes(tickangle=45)
         plotly_chart(fig, key=f'plot_tag_type_{mode}')
         tag_map: DataFrame = session_state[f'tag_class_mapping_{mode}']
-        dataframe(tag_map)
         classified_tags = result_tags.merge(tag_map,left_on='tag',right_on='tag',how='left')
         col1, col2, col3, col4 = columns(4)
         fig = px.pie(classified_tags,values='tagCount',names='class',title='Tags distribution in the community')
