@@ -19,6 +19,11 @@ BLACK_LIST = {
     'm.in.,'
 }
 
+BLACK_LIST_CATEGORIES = {
+    'weapon'
+}
+
+
 def json_to_dict(content: str) -> list[Document]:
     data = json.loads(content)
     texts: list[Document] = []
@@ -61,8 +66,9 @@ def _extract_ents_from_dict(ents: list[dict[str,dict[str,int]|str]]) -> dict[tup
     final_list = dict()
     for ent in ents:
         entity = ent['name'].lower().strip()
-        if entity not in BLACK_LIST:
-            final_list[(entity,ent['category'].lower())] = len(ent['locations'])
+        category = ent['category'].lower()
+        if entity not in BLACK_LIST and category not in BLACK_LIST_CATEGORIES:
+            final_list[(entity,category)] = len(ent['locations'])
     return final_list
         
 def get_ners(doc: Document, nlp: Language) -> dict[tuple[str,str],int]:
