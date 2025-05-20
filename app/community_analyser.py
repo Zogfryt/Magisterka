@@ -157,5 +157,5 @@ class Analyzer:
         ]
         
         df['class'] = select(conditions,['B','A'], default='C')
-        # return df.drop(['n_appearances','n_communities'],axis=1)
         return df
+    # df.drop(columns=['n_appearances','n_communities'])
