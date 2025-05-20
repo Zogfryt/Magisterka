@@ -84,11 +84,11 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         fig = px.pie(classified_tags,values='tagCount',names='class',title='Tags distribution in the community')
         col1.plotly_chart(fig, key=f'plot_tag_class_{mode}')
         col2.text('A class tags within cluster')
-        col2.dataframe(classified_tags.loc[classified_tags['class'] == 'A'].sort_values('tagCount',ascending=False))
+        col2.dataframe(classified_tags.loc[classified_tags['class'] == 'A'].sort_values('tagCount',ascending=False).drop(columns=['class']))
         col3.text('B class tags within cluster')
-        col3.dataframe(classified_tags.loc[classified_tags['class'] == 'B'].sort_values('tagCount',ascending=False))
+        col3.dataframe(classified_tags.loc[classified_tags['class'] == 'B'].sort_values('tagCount',ascending=False).drop(columns=['class']))
         col4.text('C class tags within cluster')
-        col4.dataframe(classified_tags.loc[classified_tags['class'] == 'C'].sort_values('tagCount',ascending=False))
+        col4.dataframe(classified_tags.loc[classified_tags['class'] == 'C'].sort_values('tagCount',ascending=False).drop(columns=['class']))
 
 init()
 loader: Neo4jExecutor = session_state['loader']
