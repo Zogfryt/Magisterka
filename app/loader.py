@@ -104,11 +104,11 @@ class Neo4jExecutor:
             session.execute_write(delete_articles)
             session.execute_write(delete_entities)
             
-    def get_linked_ners(self, entity: str, files: list[str]):
+    def get_linked_ners(self, entity: str, ent_type: str, files: list[str]):
         with self.driver.session() as session:
             def list_json_files(tx) -> Result:
                 return tx.run(
-                '''MATCH (e:Entity {entity: $entity})--(a:Article)
+                '''MATCH (e:Entity {entity: $entity, type: $ent_type})--(a:Article)
 WHERE (e.filename IN $files) 
 WITH a, e
 MATCH (a)-[r:USED_IN]-(e1:Entity)
@@ -116,6 +116,7 @@ WHERE e.entity <> e1.entity
 RETURN e1, r
 ''',
                 entity=entity,
+                ent_type=ent_type,
                 files=files
                 )
             return_dict: dict[tuple[str,str], int]= dict()
