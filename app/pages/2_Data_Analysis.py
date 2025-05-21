@@ -62,9 +62,12 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         session_state[f'modularities_{mode}'] = analyzer.calculate_modularity(selections, mode)
     elif select_btn and files_changed:
         session_state[f'analyzed_files_{mode}'] = set(selections)
-        del session_state[f'leiden_result_{mode}']
-        del session_state[f'tag_class_mapping_{mode}']
-        del session_state[f'modularities_{mode}']
+        if f'leiden_result_{mode}' in session_state:
+            del session_state[f'leiden_result_{mode}']
+        if f'tag_class_mapping_{mode}' in session_state:
+            del session_state[f'tag_class_mapping_{mode}']
+        if f'modularities_{mode}' in session_state:
+            del session_state[f'modularities_{mode}']
     df = session_state.get(f'leiden_result_{mode}',DataFrame({'communityId': [], 'nodeId': []}))
     aggregated_df = df.groupby('communityId').aggregate({'nodeId': list}) 
     choice = selectbox(label='Choose community ID', options=aggregated_df.index, key=f'community_selectbox_{mode}')
