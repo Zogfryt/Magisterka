@@ -84,25 +84,25 @@ RETURN tag, SIZE(distinctCommunities) as n_communities, n_appearances
 MATCHING_ENTS_QUERY_ARTICLE = '''
 MATCH (a:Article)-[r:USED_IN]-(e:Entity)
 WHERE a.communityId = $communityId and e.type in $matching and a.filename = $selection
-RETURN count(e)
+RETURN sum(r.count) AS counts
 '''
 
 MATCHING_ENTS_QUERY_ENTITY = '''
-MATCH (e:Entity)
+MATCH (a:Article)-[r:USED_IN]-(e:Entity)
 WHERE e.communityId = $communityId and e.type in $matching and e.filename = $selection
-RETURN count(e)
+RETURN sum(r.count) AS counts
 '''
 
 NON_MATCHING_ENTS_QUERY_ENTITY = '''
-MATCH (e:Entity)
+MATCH (a:Article)-[r:USED_IN]-(e:Entity)
 WHERE e.communityId = $communityId and e.type in $non_matching and e.filename = $selection
-RETURN count(e)
+RETURN sum(r.count) AS counts
 '''
 
 NON_MATCHING_ENTS_QUERY_ARTICLE = '''
 MATCH (a:Article)-[r:USED_IN]-(e:Entity)
 WHERE a.communityId = $communityId and e.type in $non_matching and a.filename = $selection
-RETURN count(e)
+RETURN sum(r.count) AS counts
 '''
 
 
@@ -212,7 +212,7 @@ class Analyzer:
             matching=matches_.matching,
             database_='neo4j'
             )
-            matching_scores.append(records[0].data()['count(e)'])
+            matching_scores.append(records[0].data()['counts'])
             records, _, _ = self.neo4j_driver.execute_query(
             query_non_match,
             selection=key,
@@ -220,7 +220,7 @@ class Analyzer:
             non_matching=matches_.non_matching,
             database_='neo4j'
             )
-            non_matching_scores.append(records[0].data()['count(e)'])
+            non_matching_scores.append(records[0].data()['counts'])
         matching = sum(matching_scores)
         non_matching = sum(non_matching_scores)
         return matching / (matching+non_matching), non_matching / (matching+non_matching)

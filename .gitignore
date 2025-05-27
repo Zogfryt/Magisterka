@@ -172,3 +172,5 @@ cython_debug/
 
 /neo4j
 poetry.lock
+
+/app/configurations
