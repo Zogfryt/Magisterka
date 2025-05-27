@@ -1,10 +1,12 @@
 from neo4j import Result, Driver
 import logging
-from dataclasses_custom import Document, LinkVector
+from dataclasses_custom import Document, LinkVector, Matches
 from typing import Literal
 from pandas import DataFrame
 from itertools import chain
 from collections import Counter
+from pathlib import Path
+import os
 
 logging.basicConfig(level=logging.INFO)
 
@@ -155,8 +157,22 @@ RETURN e1, r
         edges = []
         for rec, count in summed_dict.items():
             tup1, tup2 = rec
-            edges.append({'name1': tup1[0], 'type1': tup1[1], 'name2': tup2[0], 'type2': tup2[1], 'count': count})
+            edges.append({'name1': tup1.name, 'type1': tup1.type_, 'name2': tup2.name, 'type2': tup2.type_, 'count': count})
         return edges
+    
+    def check_ent_types_integrity(self, matches: Matches, documents: list[Document]) -> bool:
+        all_ent_types = set(chain.from_iterable([ent.type_ for ent in document.entities] for document in documents))
+        all_matches_types = set(chain(matches.matching,matches.non_matching))
+
+        ent_not_in_conf = all_ent_types - all_matches_types
+        return len(ent_not_in_conf) == 0
+        
+    def save_matches_config(self, matches: Matches, conf_path: Path):
+        if not os.path.exists(conf_path):
+            os.mkdir(conf_path)
+        
+        with open(conf_path,'w',encoding='utf-8') as file:
+            file.write(str(matches))
         
     
     

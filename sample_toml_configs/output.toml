@@ -1,0 +1,25 @@
+[matches]
+matching = [
+    'organization', #firmy robiące gry
+    'person', #postacie z gier
+    'location', #nazwy lokacji jak miasta, kraje
+    'url', #linki (na przykad do pobrania)
+    'city', #nazwy miast w grach
+    'country', #nazwy krajów w grach lub krajów deweloperów
+    'event', #Nazwa wydarzeń w grach multiplier, przecen, expo
+]
+non_matching = [
+    'language', #Średnio pasujące do gier wideo
+    'occupation', #Zawód również jest rzadko poruszany w grach wideo
+    'geogname', #To również, zazwyczaj gry skupiają się na miastach/krajach.
+]
+
+[blacklists]
+ent_types = ['weapon', 'date','time']
+ent_names = ['m.in.','m.in.,']
+
+[dictionary] #Tutaj zamieszczamy tłumaczenia typów spacy na nasze
+orgName = 'organization'
+persName = 'person'
+geogName = 'geogname'
+placeName = 'location'

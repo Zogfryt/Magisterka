@@ -7,6 +7,7 @@ from neo4j import GraphDatabase
 from graphdatascience import GraphDataScience
 from community_analyser import Analyzer
 import logging
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,6 +27,8 @@ def init():
         session_state['analyzed_files_articles'] = set()
     if 'analyzed_files_entities' not in session_state:
         session_state['analyzed_files_entities'] = set()
+    if 'conf_path' not in session_state:
+        session_state['conf_path'] = Path(__file__).absolute().parent / 'configurations'
     if 'nlp' not in session_state:
         try:
             import torch

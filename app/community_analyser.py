@@ -1,11 +1,13 @@
 from neo4j import Driver, Result
 from graphdatascience import GraphDataScience, Graph
+from dataclasses_custom import Matches
 from typing import Literal
 from itertools import chain
 from pandas import DataFrame
 import logging
 from numpy import select
-from streamlit import dataframe
+from pathlib import Path
+import tomllib
 
 ENTITY_GROUP_QUERY="""
 MATCH (e:Entity)-[r:USED_IN]->(a:Article)
@@ -79,6 +81,29 @@ WITH tag, n_appearances, COLLECT(DISTINCT community) as distinctCommunities
 RETURN tag, SIZE(distinctCommunities) as n_communities, n_appearances
 '''
 
+MATCHING_ENTS_QUERY_ARTICLE = '''
+MATCH (a:Article)-[r:USED_IN]-(e:Entity)
+WHERE a.communityId = $communityId and e.type in $matching and a.filename = $selection
+RETURN count(e)
+'''
+
+MATCHING_ENTS_QUERY_ENTITY = '''
+MATCH (e:Entity)
+WHERE e.communityId = $communityId and e.type in $matching and e.filename = $selection
+RETURN count(e)
+'''
+
+NON_MATCHING_ENTS_QUERY_ENTITY = '''
+MATCH (e:Entity)
+WHERE e.communityId = $communityId and e.type in $non_matching and e.filename = $selection
+RETURN count(e)
+'''
+
+NON_MATCHING_ENTS_QUERY_ARTICLE = '''
+MATCH (a:Article)-[r:USED_IN]-(e:Entity)
+WHERE a.communityId = $communityId and e.type in $non_matching and a.filename = $selection
+RETURN count(e)
+'''
 
 
 class Analyzer:
@@ -158,4 +183,48 @@ class Analyzer:
         
         df['class'] = select(conditions,['B','A'], default='C')
         return df
+    
+    def get_matches_criteria(self, selections: list[str], conf_path: Path) -> dict[str,Matches]:
+        return_dict = {}
+        for selection in selections:
+            filename = conf_path / selection.replace('.json','.toml')
+            with open(filename, 'rb') as file:
+                data = tomllib.load(file)
+                return_dict[selection] = Matches(
+                    matching=data['matches']['matching'],
+                    non_matching=data['matches']['non_matching']
+                )
+        return return_dict
+    
+    def calcalate_matching_ent_metric(self,
+                                      matches: dict[str,Matches],
+                                      communityId: int,
+                                      mode: Literal['articles','entities']
+                                      ) -> tuple[float,float]:
+        matching_scores, non_matching_scores = [], []
+        query_match = MATCHING_ENTS_QUERY_ARTICLE if mode == 'articles' else MATCHING_ENTS_QUERY_ENTITY
+        query_non_match = NON_MATCHING_ENTS_QUERY_ARTICLE if mode == 'articles' else NON_MATCHING_ENTS_QUERY_ENTITY
+        for key, matches_ in matches.items():
+            records, _, _ = self.neo4j_driver.execute_query(
+            query_match,
+            selection=key,
+            communityId=communityId,
+            matching=matches_.matching,
+            database_='neo4j'
+            )
+            matching_scores.append(records[0].data()['count(e)'])
+            records, _, _ = self.neo4j_driver.execute_query(
+            query_non_match,
+            selection=key,
+            communityId=communityId,
+            non_matching=matches_.non_matching,
+            database_='neo4j'
+            )
+            non_matching_scores.append(records[0].data()['count(e)'])
+        matching = sum(matching_scores)
+        non_matching = sum(non_matching_scores)
+        return matching / (matching+non_matching), non_matching / (matching+non_matching)
+    
+            
+
     # df.drop(columns=['n_appearances','n_communities'])

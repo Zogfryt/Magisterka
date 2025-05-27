@@ -1,11 +1,11 @@
-from dataclasses_custom import Document, LinkVector
+from dataclasses_custom import Document, LinkVector, Entity
 from collections import Counter
 from itertools import chain, product
 import numpy as np
 from tqdm import tqdm
 import logging
 
-def __ner_vector(counts: Counter, map: dict[tuple[str,str],int]) -> np.ndarray:
+def __ner_vector(counts: Counter, map: dict[Entity,int]) -> np.ndarray:
     shape = len(map)
     vec = np.zeros(shape,dtype=float)
     
@@ -16,12 +16,9 @@ def __ner_vector(counts: Counter, map: dict[tuple[str,str],int]) -> np.ndarray:
 
 def __calculate_cosine(count1: Counter, count2: Counter) -> float:
     index = dict()
-    increment = 0
     
-    for key in chain(count1.keys(),count2.keys()):
-        if key not in index:
-            index[key] = increment
-            increment += 1
+    for idx, key in enumerate(set(chain(count1.keys(),count2.keys()))):
+            index[key] = idx
             
     vec1 = __ner_vector(count1, index)
     vec2 = __ner_vector(count2, index)
@@ -37,7 +34,7 @@ def __calculate_jaccard(count1: Counter, count2: Counter) -> float:
     return top / bottom
 
 
-def calculate_distances(ents1: dict[tuple[str,str],int], ents2: dict[tuple[str,str],int]) -> tuple[float,float]:
+def calculate_distances(ents1: dict[Entity,int], ents2: dict[Entity,int]) -> tuple[float,float]:
     counter_ents1 = Counter(ents1)
     counter_ents2 = Counter(ents2)
             

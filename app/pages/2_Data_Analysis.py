@@ -1,7 +1,8 @@
-from streamlit import multiselect, session_state, text_input, button, plotly_chart, tabs, dataframe, selectbox, metric, columns, error, slider
+from streamlit import multiselect, session_state, text_input, button, plotly_chart, tabs, dataframe, selectbox, metric, columns, error, slider, text
 from shared import init
 from loader import Neo4jExecutor
 import plotly.express as px
+from plotly.graph_objects import Pie, Figure
 from typing import Literal
 from pandas import Series, DataFrame
 from clustering import GraphClusterer
@@ -60,6 +61,7 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         session_state[f'tag_class_mapping_{mode}'] = analyzer.get_article_tags_class(selections, mode)
         cluster.delete_graph_projection(graph_name)
         session_state[f'modularities_{mode}'] = analyzer.calculate_modularity(selections, mode)
+        session_state[f"match_conf_{mode}"] = analyzer.get_matches_criteria(selections,session_state['conf_path'])
     elif select_btn and files_changed:
         session_state[f'analyzed_files_{mode}'] = set(selections)
         if f'leiden_result_{mode}' in session_state:
@@ -97,6 +99,9 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         col3.dataframe(classified_tags.loc[classified_tags['class'] == 'B'].sort_values('tagCount',ascending=False).drop(columns=['class']))
         col4.text('C class tags within cluster')
         col4.dataframe(classified_tags.loc[classified_tags['class'] == 'C'].sort_values('tagCount',ascending=False).drop(columns=['class']))
+        match_stats = analyzer.calcalate_matching_ent_metric(session_state[f"match_conf_{mode}"],int(choice),mode)
+        figure = Figure(data=[Pie(labels=["Matching","Not Matching"], values=list(match_stats),title="Matching ents ratio")])
+        plotly_chart(figure)
 
 init()
 loader: Neo4jExecutor = session_state['loader']
