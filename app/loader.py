@@ -27,13 +27,18 @@ Merge (e)-[:APPEARANCE {count: edge.count}]-(ee)
 class Neo4jExecutor:
     
     driver: Driver
+    conf_path: Path
     
-    def __init__(self, driver: Driver):
+    def __init__(self, driver: Driver, conf_path: Path):
         self.driver = driver 
+        self.conf_path = conf_path
         try:
             self.driver.verify_connectivity()
         except Exception:
             logging.error("connection error")
+        
+        if not os.path.exists(self.conf_path):
+            os.mkdir(self.conf_path)
 
     def get_files(self) -> list[str]:
         with self.driver.session() as session:
@@ -128,15 +133,16 @@ RETURN e1, r
                 return_dict[key] = return_dict.get(key,0) + record[1]['count']
             return return_dict
         
-    def update_with_communities(self, communities: list[dict[str,str]], mode: Literal['articles','entities']):
+    def update_with_communities(self, communities: list[dict[str,str]], key: str,mode: Literal['articles','entities']):
         if mode == 'articles':
             _, summary, _  = self.driver.execute_query(
                 """UNWIND $communities as data
                 MATCH (a: Article)
                 WHERE id(a) = toInteger(data.nodeId)
-                SET a.communityId = data.communityId""",
+                SET a[$key] = data.communityId""",
                 database_="neo4j",
-                communities=communities
+                communities=communities,
+                key=key
             )
             logging.info(f"Updating community nodes in {mode}. Status: {summary.counters}")
         else:
@@ -144,9 +150,10 @@ RETURN e1, r
                 """UNWIND $communities as data
                 MATCH (e: Entity)
                 WHERE id(e) = toInteger(data.nodeId)
-                SET e.communityId = data.communityId""",
+                SET e[$key] = data.communityId""",
                 database_="neo4j",
-                communities=communities
+                communities=communities,
+                key=key
             )
             logging.info(f"Updating community nodes in {mode}. Status: {summary.counters}")
 
@@ -167,9 +174,8 @@ RETURN e1, r
         ent_not_in_conf = all_ent_types - all_matches_types
         return len(ent_not_in_conf) == 0
         
-    def save_matches_config(self, matches: Matches, conf_path: Path):
-        if not os.path.exists(conf_path):
-            os.mkdir(conf_path)
+    def save_matches_config(self, matches: Matches, filename: str):
+        conf_path = self.conf_path / filename
         
         with open(conf_path,'w',encoding='utf-8') as file:
             file.write(str(matches))

@@ -13,12 +13,14 @@ logging.basicConfig(level=logging.INFO)
 
 def init():
     set_page_config(layout="wide")
+    if 'conf_path' not in session_state:
+        session_state['conf_path'] = Path(__file__).absolute().parent / 'configurations'
     if 'db_driver' not in session_state:
         session_state['db_driver'] = GraphDatabase.driver(getenv('DATABASE_URL'),auth=(getenv('DATABASE_USR'),getenv('DATABASE_PASSWORD'))) 
     if 'gds_driver' not in session_state:
         session_state['gds_driver'] =  GraphDataScience(getenv('DATABASE_URL'),auth=(getenv('DATABASE_USR'),getenv('DATABASE_PASSWORD')))
     if 'loader' not in session_state:
-        session_state['loader'] = Neo4jExecutor(session_state['db_driver'])
+        session_state['loader'] = Neo4jExecutor(session_state['db_driver'], session_state['conf_path'])
     if 'cluster_driver' not in session_state:
         session_state['cluster_driver'] = GraphClusterer(session_state['gds_driver'])
     if 'analyzer' not in session_state:
@@ -27,8 +29,7 @@ def init():
         session_state['analyzed_files_articles'] = set()
     if 'analyzed_files_entities' not in session_state:
         session_state['analyzed_files_entities'] = set()
-    if 'conf_path' not in session_state:
-        session_state['conf_path'] = Path(__file__).absolute().parent / 'configurations'
+
     if 'nlp' not in session_state:
         try:
             import torch
