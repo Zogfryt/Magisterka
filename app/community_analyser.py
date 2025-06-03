@@ -44,11 +44,11 @@ WHERE source.filename IN $selections AND source[$key] IS NOT NULL AND target[$ke
 RETURN gds.graph.project('Modularity_Articles',
 source,
 target,
-{
-    sourceNodeProperties: source { .communityId },
-    targetNodeProperties: target { .communityId },
-    relationshipProperties: r { .cosinus }
-}, {undirectedRelationshipTypes: ['*']})'''
+{{
+    sourceNodeProperties: source {{ .{communityId} }},
+    targetNodeProperties: target {{ .{communityId} }},
+    relationshipProperties: r {{ .cosinus }}
+}}, {{undirectedRelationshipTypes: ['*']}})'''
 
 GRAPH_PROJECTION_FOR_MODULARITY_QUERY_ENTS = '''
 MATCH (source: Entity)-[r:APPEARANCE]-(target: Entity)
@@ -56,23 +56,23 @@ WHERE source.filename IN $selections AND source[$key] IS NOT NULL AND target[$ke
 RETURN gds.graph.project('Modularity_Entities',
 source,
 target,
-{
-    sourceNodeProperties: source { .communityId },
-    targetNodeProperties: target { .communityId },
-    relationshipProperties: r { .count }
-}, {undirectedRelationshipTypes: ['*']})'''
+{{
+    sourceNodeProperties: source {{ .{communityId} }},
+    targetNodeProperties: target {{ .{communityId} }},
+    relationshipProperties: r {{ .count }}
+}}, {{undirectedRelationshipTypes: ['*']}})'''
 
 ARTICLE_TAGS_COMMUNITY_MINING_QUERY = '''
 MATCH (a:Article)
 WHERE a.filename IN $selections 
 UNWIND a.tags as tag
-RETURN tag, count(a.communityId) as n_appearances, count(DISTINCT a.communityId) as n_communities
+RETURN tag, count(a[$key]) as n_appearances, count(DISTINCT a[$key]) as n_communities
 '''
 
 ARTICLE_TAGS_COMMUNITY_MINING_QUERY_ENTITY = '''
 MATCH (a:Article)-[r:USED_IN]-(e:Entity)
 WHERE a.filename IN $selections AND e.filename IN $selections
-WITH a, COLLECT(DISTINCT e.communityId) as articleCommunities
+WITH a, COLLECT(DISTINCT e[$key]) as articleCommunities
 UNWIND a.tags as tag
 WITH tag, COUNT(*) as n_appearances, COLLECT(articleCommunities) as allCommunitiesPerTag
 UNWIND allCommunitiesPerTag as communities
@@ -144,7 +144,7 @@ class Analyzer:
         graph_name = 'Modularity_Articles' if mode == 'articles' else 'Modularity_Entities'
         try:
             graph, _ = self.gds_driver.graph.cypher.project(
-                query,
+                query.format(communityId=key),
                 database='neo4j',
                 selections=selections,
                 key=key
@@ -163,19 +163,20 @@ class Analyzer:
     def calculate_modularity(self, selections: list[str], key: str, mode: Literal['articles','entities']) -> DataFrame:
         graph = self._create_modularity_projection(selections, key, mode)
         if mode == 'articles':
-            result = self.gds_driver.modularity.stream(graph,communityProperty='communityId', relationshipWeightProperty='cosinus')
+            result = self.gds_driver.modularity.stream(graph,communityProperty=key, relationshipWeightProperty='cosinus')
         elif mode == 'entities':
-            result = self.gds_driver.modularity.stream(graph,communityProperty='communityId', relationshipWeightProperty='count')
+            result = self.gds_driver.modularity.stream(graph,communityProperty=key, relationshipWeightProperty='count')
         else:
             raise AttributeError("In calculating modularity you can choose only: 'articles','entities'")
         self.gds_driver.graph.drop(graph)
         return result.set_index('communityId',drop=True)
     
 
-    def get_article_tags_class(self, selections: list[str], mode: Literal['articles','entities']) -> DataFrame:
+    def get_article_tags_class(self, selections: list[str], key: str, mode: Literal['articles','entities']) -> DataFrame:
         records, _, _ = self.neo4j_driver.execute_query(
             ARTICLE_TAGS_COMMUNITY_MINING_QUERY if mode == 'articles' else ARTICLE_TAGS_COMMUNITY_MINING_QUERY_ENTITY,
             selections=selections,
+            key=key,
             database_='neo4j'
         )
         
@@ -203,7 +204,7 @@ class Analyzer:
     def calcalate_matching_ent_metric(self,
                                       matches: dict[str,Matches],
                                       communityId: int,
-                                      key: str,
+                                      cluster_key: str,
                                       mode: Literal['articles','entities']
                                       ) -> tuple[float,float]:
         matching_scores, non_matching_scores = [], []
@@ -216,7 +217,7 @@ class Analyzer:
             communityId=communityId,
             matching=matches_.matching,
             database_='neo4j',
-            key=key
+            key=cluster_key
             )
             matching_scores.append(records[0].data()['counts'])
             records, _, _ = self.neo4j_driver.execute_query(
@@ -225,11 +226,12 @@ class Analyzer:
             communityId=communityId,
             non_matching=matches_.non_matching,
             database_='neo4j',
-            key=key
+            key=cluster_key
             )
             non_matching_scores.append(records[0].data()['counts'])
         matching = sum(matching_scores)
         non_matching = sum(non_matching_scores)
+
         return matching / (matching+non_matching), non_matching / (matching+non_matching)
     
     def is_clustering_needed(self, key: str) -> bool:

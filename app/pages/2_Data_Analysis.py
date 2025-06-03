@@ -1,4 +1,4 @@
-from streamlit import multiselect, session_state, text_input, button, plotly_chart, tabs, dataframe, selectbox, metric, columns, error, slider, text
+from streamlit import multiselect, session_state, write, button, plotly_chart, tabs, dataframe, selectbox, metric, columns, error, slider, text
 from shared import init
 from loader import Neo4jExecutor
 import plotly.express as px
@@ -53,21 +53,22 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
     analyzer: Analyzer = session_state['analyzer']
     cluster: GraphClusterer = session_state['cluster_driver']
     graph_name = 'DocumentWithDistance' if mode == 'articles' else 'EntitiesWithCoExistance'
-    key = '_'.join(selection.replace('.json','') for selection in sorted(selections))
     if select_btn and files_changed and len(selections) > 0:
+        session_state[f'key_{mode}'] = '_'.join(selection.replace('.json','') for selection in sorted(selections))
         session_state[f'analyzed_files_{mode}'] = set(selections)
-        if analyzer.is_clustering_needed(key):
+        if analyzer.is_clustering_needed(session_state[f'key_{mode}']):
             session_state[f'graph_{mode}'] = cluster.create_graph_projection(selections,graph_name)
             session_state[f'leiden_result_{mode}'] = cluster.leiden_cluster(session_state[f'graph_{mode}'])
             cluster.delete_graph_projection(graph_name)
             loader.update_with_communities(session_state[f'leiden_result_{mode}'][['nodeId','communityId']].to_dict(orient='records'),key,mode)
         else:
-            session_state[f'leiden_result_{mode}'] = analyzer.get_community_nodes(key,mode)
-        session_state[f'tag_class_mapping_{mode}'] = analyzer.get_article_tags_class(selections, mode)
-        session_state[f'modularities_{mode}'] = analyzer.calculate_modularity(selections, mode)
+            session_state[f'leiden_result_{mode}'] = analyzer.get_community_nodes(session_state[f'key_{mode}'],mode)
+        session_state[f'tag_class_mapping_{mode}'] = analyzer.get_article_tags_class(selections, session_state[f'key_{mode}'], mode)
+        session_state[f'modularities_{mode}'] = analyzer.calculate_modularity(selections, session_state[f'key_{mode}'], mode)
         session_state[f"match_conf_{mode}"] = analyzer.get_matches_criteria(selections,session_state['conf_path'])
     elif select_btn and files_changed:
         session_state[f'analyzed_files_{mode}'] = set(selections)
+        session_state[f'key_{mode}'] = ''
         if f'leiden_result_{mode}' in session_state:
             del session_state[f'leiden_result_{mode}']
         if f'tag_class_mapping_{mode}' in session_state:
@@ -80,9 +81,9 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
     if choice is not None:
         df_modularities: DataFrame = session_state[f'modularities_{mode}']
         show_statistics(len(aggregated_df.loc[choice,'nodeId']),df_modularities.loc[choice, 'modularity'])
-        result = analyzer.get_ents_from_community(int(choice), key,mode)
+        result = analyzer.get_ents_from_community(int(choice), session_state[f'key_{mode}'],mode)
         result = result.sort_values('entityCount',ascending=False)
-        result_tags = analyzer.get_article_tags_from_community(int(choice), key,mode)
+        result_tags = analyzer.get_article_tags_from_community(int(choice), session_state[f'key_{mode}'],mode)
         fig = px.bar(result.iloc[:20],x='entity',y='entityCount',title='Top 20 entities')
         plotly_chart(fig)
         res = result[['type','entityCount']].groupby('type', as_index=False).sum().sort_values('entityCount',ascending=False)
@@ -103,7 +104,7 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         col3.dataframe(classified_tags.loc[classified_tags['class'] == 'B'].sort_values('tagCount',ascending=False).drop(columns=['class']))
         col4.text('C class tags within cluster')
         col4.dataframe(classified_tags.loc[classified_tags['class'] == 'C'].sort_values('tagCount',ascending=False).drop(columns=['class']))
-        match_stats = analyzer.calcalate_matching_ent_metric(session_state[f"match_conf_{mode}"],int(choice),key,mode)
+        match_stats = analyzer.calcalate_matching_ent_metric(session_state[f"match_conf_{mode}"],int(choice),session_state[f'key_{mode}'],mode)
         figure = Figure(data=[Pie(labels=["Matching","Not Matching"], values=list(match_stats),title="Matching ents ratio")])
         plotly_chart(figure)
 
