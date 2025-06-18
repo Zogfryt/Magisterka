@@ -20,11 +20,17 @@ class GraphClusterer:
         return graph
     
     def _create_graph_projection_entities(self, selections: List[str]) -> Graph:
+        keys = [key.replace('.json','') for key in selections]
+        equation = ' + '.join([f"coalesce(r.{key},0)" for key in keys])
+        query = """
+            MATCH (a: Article)-[:USED_IN]-(source:Entity)
+            MATCH (aa: Article)-[:USED_IN]-(target: Entity)
+            MATCH (source)-[r:APPEARANCE]-(target)
+            WHERE aa.filename IN $selections AND a.filename in $selections
+            WITH source, target, {equation} as count
+            RETURN gds.graph.project('EntitiesWithCoExistance',source,target,{{ relationshipProperties: {{ count: count }} }}, {{undirectedRelationshipTypes: ['*']}})"""
         graph, _ = self.gds_driver.graph.cypher.project(
-            """
-            MATCH (source: Entity)-[r:APPEARANCE]-(target: Entity)
-            WHERE source.filename IN $selections
-            RETURN gds.graph.project('EntitiesWithCoExistance',source,target,{ relationshipProperties: r { .count } }, {undirectedRelationshipTypes: ['*']})""",
+            query.format(equation=equation),   
             database='neo4j',
             selections=selections
         )

@@ -7,20 +7,25 @@ from itertools import chain
 from collections import Counter
 from pathlib import Path
 import os
+from timeit import default_timer
 
 logging.basicConfig(level=logging.INFO)
 
-SIMILARITY_EDGE_STRING = """UNWIND $edges as edge
+SIMILARITY_EDGE_STRING = """CALL {
+UNWIND $edges as edge
 MATCH (a:Article {url: edge.url1, filename: $filename})
 MATCH (b:Article {url: edge.url2, filename: $filename})
 MERGE (b)-[r:SIMILARITY {cosinus: edge.cosinus, jaccard: edge.jaccard}]-(a)
+} IN CONCURRENT TRANSACTIONS
 """
 
 CONNECTION_BETWEEN_ENTS_STRING = """
+CALL {{
 UNWIND $edges as edge
-MATCH (e:Entity {entity: edge.name1, type: edge.type1, filename: $filename})
-MATCH (ee:Entity {entity: edge.name2, type: edge.type2, filename: $filename})
-Merge (e)-[:APPEARANCE {count: edge.count}]-(ee)
+MATCH (e:Entity {{entity: edge.name1, type: edge.type1}})
+MATCH (ee:Entity {{entity: edge.name2, type: edge.type2}})
+MERGE (e)-[a:APPEARANCE {{{key}: edge.count}}]-(ee)
+}} IN CONCURRENT TRANSACTIONS
 """
 
 
@@ -52,47 +57,57 @@ class Neo4jExecutor:
     def get_ners_count(self, json_names: list[str]) -> DataFrame:
         records = self.driver.execute_query(
             """MATCH (e: Entity)-[r: USED_IN]->(a:Article)
-            WHERE e.filename in $json_names
+            WHERE a.filename in $json_names
             RETURN e.entity AS entity, SUM(r.count) AS count, e.type as type""",
             database_='neo4j',
-            json_names=json_names
+            json_names=json_names,
         )[0]
 
         return DataFrame([record.data() for record in records])
 
 
     def load_data(self, docs: list[Document], similarity_edges: list[LinkVector], filename: str):
-        logging.info("Loading to database") 
+        logging.info("Loading to database new") 
+        start = default_timer()
 
-        _, summary, _  = self.driver.execute_query(
-            """UNWIND $documents AS docs
-            Merge (e:Entity {entity: docs.ent_name, type: docs.ent_type, filename: $filename})
-            Merge (a:Article {url: docs.url, title: docs.title, content: docs.content, lead_content: docs.lead_content, recipe_label: docs.recipe_label, tags: docs.tags, filename: $filename})
-            Merge (e)-[:USED_IN {count: docs.count}]-(a)
-            """,
-            database_="neo4j",
-            documents=list(chain.from_iterable(doc.neo4j_json_list() for doc in docs)),
-            filename=filename
-        )
-        logging.info(f"Uploading docs, ents nodes and count edges summary: {summary.counters}")
+        with self.driver.session(database='neo4j') as session:
+            result = session.run(
+                """CALL {
+                UNWIND $documents AS docs
+                Merge (e:Entity {entity: docs.ent_name, type: docs.ent_type})
+                Merge (a:Article {url: docs.url, title: docs.title, content: docs.content, lead_content: docs.lead_content, recipe_label: docs.recipe_label, tags: docs.tags, filename: $filename})
+                Merge (e)-[:USED_IN {count: docs.count}]-(a)
+                } IN CONCURRENT TRANSACTIONS
+                """,
+                database_="neo4j",
+                documents=list(chain.from_iterable(doc.neo4j_json_list() for doc in docs)),
+                filename=filename
+            )
+        logging.info(f"Uploading docs, ents nodes and count edges summary: {result.consume().counters}")
 
-        _, summary, _ = self.driver.execute_query(
-            SIMILARITY_EDGE_STRING,
-            database_="neo4j",
-            edges=[{"url1": sim.doc1.url, "url2": sim.doc2.url, "cosinus": sim.cosinus, 'jaccard': sim.jaccard} for sim in similarity_edges],
-            filename=filename
-        )
+        with self.driver.session(database='neo4j') as session:
+            result = session.run(
+                SIMILARITY_EDGE_STRING,
+                edges=[{"url1": sim.doc1.url, "url2": sim.doc2.url, "cosinus": sim.cosinus, 'jaccard': sim.jaccard} for sim in similarity_edges],
+                filename=filename
+            )
 
-        logging.info(f"Uploading document similarity edges summary: {summary.counters}")
+        logging.info(f"Uploading document similarity edges summary: {result.consume().counters}")
+        edges = self._get_entity_links(docs)
+        batch_size = 10000
+        for idx in range(0,len(edges),batch_size):     
+            with self.driver.session(database='neo4j') as session:
+                result = session.run(
+                    CONNECTION_BETWEEN_ENTS_STRING.format(key=filename.replace('.json','')),
+                    database_="neo4j",
+                    edges=edges[idx:idx+batch_size],
+                    filename=filename,
+                )    
+            logging.info(f"Uploaded {idx}/{len(edges)}")       
 
-        _, summary, _ = self.driver.execute_query(
-            CONNECTION_BETWEEN_ENTS_STRING,
-            database_="neo4j",
-            edges=self._get_entity_links(docs),
-            filename=filename
-        )
-
-        logging.info(f"Uploading entity co-appearance edges summary: {summary.counters}")
+        logging.info(f"Uploading entity co-appearance edges summary: {result.consume().counters}")
+        stop = default_timer()
+        logging.info(f"Upload took {stop-start}s")
 
     def delete_json(self, json_name: str):
         with self.driver.session() as session:
@@ -104,7 +119,7 @@ class Neo4jExecutor:
             
             def delete_entities(tx):
                 return tx.run(
-                    "MATCH (e:Entity {filename: $filename}) DETACH DELETE e",
+                    "MATCH (e:Entity) WHERE not (e)-[:USED_IN]-() DETACH DELETE e",
                     filename = json_name
                 )
             
@@ -116,7 +131,7 @@ class Neo4jExecutor:
             def list_json_files(tx) -> Result:
                 return tx.run(
                 '''MATCH (e:Entity {entity: $entity, type: $ent_type})--(a:Article)
-WHERE (e.filename IN $files) 
+WHERE (a.filename IN $files) 
 WITH a, e
 MATCH (a)-[r:USED_IN]-(e1:Entity)
 WHERE e.entity <> e1.entity
@@ -167,12 +182,12 @@ RETURN e1, r
             edges.append({'name1': tup1.name, 'type1': tup1.type_, 'name2': tup2.name, 'type2': tup2.type_, 'count': count})
         return edges
     
-    def check_ent_types_integrity(self, matches: Matches, documents: list[Document]) -> bool:
+    def check_ent_types_integrity(self, matches: Matches, documents: list[Document]) -> set[str]:
         all_ent_types = set(chain.from_iterable([ent.type_ for ent in document.entities] for document in documents))
         all_matches_types = set(chain(matches.matching,matches.non_matching))
 
         ent_not_in_conf = all_ent_types - all_matches_types
-        return len(ent_not_in_conf) == 0
+        return ent_not_in_conf
         
     def save_matches_config(self, matches: Matches, filename: str):
         conf_path = self.conf_path / filename

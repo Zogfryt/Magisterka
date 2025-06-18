@@ -60,7 +60,7 @@ class Document():
         }
     
     def return_tuple_connections(self) -> Counter[tuple[Entity,Entity]]:
-        return Counter({(tup1,tup2):(self.entities[tup1]+self.entities[tup2])/2 for tup1, tup2 in combinations(self.entities.keys(),2)})
+        return Counter({tuple(sorted((tup1,tup2),key=lambda x: x.name)):(self.entities[tup1]+self.entities[tup2])/2 for tup1, tup2 in combinations(self.entities.keys(),2)})
     
 @dataclass()
 class LinkVector:

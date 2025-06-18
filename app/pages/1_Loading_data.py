@@ -19,8 +19,8 @@ def load_data_action(content: str, conf_content: str, filename: str, ner_format:
     for doc in tqdm(documents):
         if len(doc.entities) == 0:
             doc.entities = get_ners(doc, session_state['nlp'], dictionary,blacklist)
-    is_integrable = loader.check_ent_types_integrity(matches,documents)
-    if is_integrable:
+    non_matching = loader.check_ent_types_integrity(matches,documents)
+    if len(non_matching) == 0:
         status_.write('Calculating distances')
         vectors = create_similarity_links(documents)
         status_.write('Saving Configuration')
@@ -29,8 +29,7 @@ def load_data_action(content: str, conf_content: str, filename: str, ner_format:
         loader.load_data(documents, vectors, filename)
         status_.update(label='Loading complete!', state='complete', expanded=False)
     else:
-        status_.update(label='Loading failed! There are types in "matches" section in your configuration that are not in detected types.', state='complete', expanded=False)
-    rerun()
+        status_.update(label=f'Loading failed! There are types in "matches" section in your configuration that are not in detected types. You need to add: {non_matching}', state='complete', expanded=False)
     
 
 init()

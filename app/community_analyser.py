@@ -9,6 +9,8 @@ from numpy import select
 from pathlib import Path
 import tomllib
 
+logging.basicConfig(level=logging.INFO)
+
 ENTITY_GROUP_QUERY="""
 MATCH (e:Entity)-[r:USED_IN]->(a:Article)
 WHERE a[$key] = $communityId
@@ -51,15 +53,18 @@ target,
 }}, {{undirectedRelationshipTypes: ['*']}})'''
 
 GRAPH_PROJECTION_FOR_MODULARITY_QUERY_ENTS = '''
-MATCH (source: Entity)-[r:APPEARANCE]-(target: Entity)
-WHERE source.filename IN $selections AND source[$key] IS NOT NULL AND target[$key] IS NOT NULL
+MATCH (a:Article)-[:USED_IN]-(source:Entity)
+MATCH (aa:Article)-[:USED_IN]-(target:Entity)
+MATCH (source)-[r:APPEARANCE]-(target)
+WITH source, target, {equation} as count
+WHERE a.filename IN $selections AND aa.filename IN $selections AND source[$key] IS NOT NULL AND target[$key] IS NOT NULL
 RETURN gds.graph.project('Modularity_Entities',
 source,
 target,
 {{
     sourceNodeProperties: source {{ .{communityId} }},
     targetNodeProperties: target {{ .{communityId} }},
-    relationshipProperties: r {{ .count }}
+    relationshipProperties: {{ count: count }}
 }}, {{undirectedRelationshipTypes: ['*']}})'''
 
 ARTICLE_TAGS_COMMUNITY_MINING_QUERY = '''
@@ -71,7 +76,7 @@ RETURN tag, count(a[$key]) as n_appearances, count(DISTINCT a[$key]) as n_commun
 
 ARTICLE_TAGS_COMMUNITY_MINING_QUERY_ENTITY = '''
 MATCH (a:Article)-[r:USED_IN]-(e:Entity)
-WHERE a.filename IN $selections AND e.filename IN $selections
+WHERE a.filename IN $selections
 WITH a, COLLECT(DISTINCT e[$key]) as articleCommunities
 UNWIND a.tags as tag
 WITH tag, COUNT(*) as n_appearances, COLLECT(articleCommunities) as allCommunitiesPerTag
@@ -140,11 +145,17 @@ class Analyzer:
         return DataFrame([record.data() for record in records])
     
     def _create_modularity_projection(self, selections: list[str], key: str, mode: Literal['articles','entities']) -> Graph:
-        query = GRAPH_PROJECTION_FOR_MODULARITY_QUERY if mode == 'articles' else GRAPH_PROJECTION_FOR_MODULARITY_QUERY_ENTS
+        if mode == 'articles':
+            query = GRAPH_PROJECTION_FOR_MODULARITY_QUERY.format(communityId=key) 
+        else:
+            keys = [k.replace('.json','') for k in selections]
+            equation = ' + '.join([f"coalesce(r.{key},0)" for key in keys])
+            query = GRAPH_PROJECTION_FOR_MODULARITY_QUERY_ENTS.format(communityId=key,equation=equation) 
+        logging.info(f"{mode}: {query}")
         graph_name = 'Modularity_Articles' if mode == 'articles' else 'Modularity_Entities'
         try:
             graph, _ = self.gds_driver.graph.cypher.project(
-                query.format(communityId=key),
+                query,
                 database='neo4j',
                 selections=selections,
                 key=key
@@ -232,7 +243,7 @@ class Analyzer:
         matching = sum(matching_scores)
         non_matching = sum(non_matching_scores)
 
-        return matching / (matching+non_matching), non_matching / (matching+non_matching)
+        return matching / (matching+non_matching+1e-5), non_matching / (matching+non_matching+1e-5)
     
     def is_clustering_needed(self, key: str) -> bool:
         records, _, _ = self.neo4j_driver.execute_query(

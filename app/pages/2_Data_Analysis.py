@@ -60,7 +60,7 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
             session_state[f'graph_{mode}'] = cluster.create_graph_projection(selections,graph_name)
             session_state[f'leiden_result_{mode}'] = cluster.leiden_cluster(session_state[f'graph_{mode}'])
             cluster.delete_graph_projection(graph_name)
-            loader.update_with_communities(session_state[f'leiden_result_{mode}'][['nodeId','communityId']].to_dict(orient='records'),key,mode)
+            loader.update_with_communities(session_state[f'leiden_result_{mode}'][['nodeId','communityId']].to_dict(orient='records'),session_state[f'key_{mode}'],mode)
         else:
             session_state[f'leiden_result_{mode}'] = analyzer.get_community_nodes(session_state[f'key_{mode}'],mode)
         session_state[f'tag_class_mapping_{mode}'] = analyzer.get_article_tags_class(selections, session_state[f'key_{mode}'], mode)
