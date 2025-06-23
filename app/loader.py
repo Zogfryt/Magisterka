@@ -1,6 +1,6 @@
-from neo4j import Result, Driver
+from neo4j import Result, Driver, Session
 import logging
-from dataclasses_custom import Document, LinkVector, Matches
+from dataclasses_custom import Document, LinkVector, Matches, Entity
 from typing import Literal
 from pandas import DataFrame
 from itertools import chain
@@ -8,13 +8,19 @@ from collections import Counter
 from pathlib import Path
 import os
 from timeit import default_timer
+from collapser import create_similarity_links, create_similarity_links_between_files
+from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO)
 
+DB_NAME = 'neo4j'
+
+FILES_QUERY = 'MATCH (a:Article) RETURN COLLECT(DISTINCT a.filename) AS file'
+
 SIMILARITY_EDGE_STRING = """CALL {
 UNWIND $edges as edge
-MATCH (a:Article {url: edge.url1, filename: $filename})
-MATCH (b:Article {url: edge.url2, filename: $filename})
+MATCH (a:Article {url: edge.url1})
+MATCH (b:Article {url: edge.url2})
 MERGE (b)-[r:SIMILARITY {cosinus: edge.cosinus, jaccard: edge.jaccard}]-(a)
 } IN CONCURRENT TRANSACTIONS
 """
@@ -28,6 +34,20 @@ MERGE (e)-[a:APPEARANCE {{{key}: edge.count}}]-(ee)
 }} IN CONCURRENT TRANSACTIONS
 """
 
+GET_DOCUMENT_BY_FILENAME_QUERY = '''
+MATCH (a: Article)-[r:USED_IN]-(e: Entity)
+WHERE a.filename = $filename
+RETURN a.url as url, r.count as count, e.entity as entity, e.type as type
+'''
+
+INDEX_ARTICLE_URL = """
+CREATE INDEX article_index_url IF NOT EXISTS FOR (a:Article) on (a.url)"""
+
+INDEX_ENTITY_NAME_TYPE = """
+CREATE INDEX entity_index_entitiy_type IF NOT EXISTS FOR (e:Entity) on (e.entity,e.type)"""
+
+INDEX_ARTICLE_URL_FILENAME = '''
+CREATE INDEX article_index_url_filename IF NOT EXISTS FOR (a:Article) on (a.url,a.filename)'''
 
 class Neo4jExecutor:
     
@@ -42,35 +62,43 @@ class Neo4jExecutor:
         except Exception:
             logging.error("connection error")
         
+        try:
+            with self.driver.session(database=DB_NAME) as session:
+                session.run(INDEX_ARTICLE_URL)
+                session.run(INDEX_ARTICLE_URL_FILENAME)
+                session.run(INDEX_ENTITY_NAME_TYPE)
+        except Exception:
+            logging.error(f"Indexes creation failure")
+            
         if not os.path.exists(self.conf_path):
             os.mkdir(self.conf_path)
 
     def get_files(self) -> list[str]:
-        with self.driver.session() as session:
-            def list_json_files(tx) -> Result:
-                return tx.run(
-                'MATCH (a:Article) RETURN COLLECT(DISTINCT a.filename) AS file'
-                )
-            
-            return [record.value('file') for record in list_json_files(session)][0]
+        with self.driver.session(database=DB_NAME) as session:
+            result = session.run(FILES_QUERY)
+            return next(result)['file']
+        
+    def _get_files(self,session: Session) -> list[str]:
+        result = session.run(FILES_QUERY)
+        return next(result)['file']
         
     def get_ners_count(self, json_names: list[str]) -> DataFrame:
         records = self.driver.execute_query(
             """MATCH (e: Entity)-[r: USED_IN]->(a:Article)
             WHERE a.filename in $json_names
             RETURN e.entity AS entity, SUM(r.count) AS count, e.type as type""",
-            database_='neo4j',
+            database_=DB_NAME,
             json_names=json_names,
         )[0]
 
         return DataFrame([record.data() for record in records])
 
 
-    def load_data(self, docs: list[Document], similarity_edges: list[LinkVector], filename: str):
+    def load_data(self, docs: list[Document], filename: str):
         logging.info("Loading to database new") 
         start = default_timer()
 
-        with self.driver.session(database='neo4j') as session:
+        with self.driver.session(database=DB_NAME) as session:
             result = session.run(
                 """CALL {
                 UNWIND $documents AS docs
@@ -83,32 +111,45 @@ class Neo4jExecutor:
                 documents=list(chain.from_iterable(doc.neo4j_json_list() for doc in docs)),
                 filename=filename
             )
-        logging.info(f"Uploading docs, ents nodes and count edges summary: {result.consume().counters}")
+        
+            logging.info(f"Uploading docs, ents nodes and count edges summary: {result.consume().counters}")
+            logging.info(f"Calculating and uploading similarities between articles")
 
-        with self.driver.session(database='neo4j') as session:
             result = session.run(
                 SIMILARITY_EDGE_STRING,
-                edges=[{"url1": sim.doc1.url, "url2": sim.doc2.url, "cosinus": sim.cosinus, 'jaccard': sim.jaccard} for sim in similarity_edges],
-                filename=filename
+                edges=self._prepare_similarity_links(create_similarity_links(docs))
             )
 
-        logging.info(f"Uploading document similarity edges summary: {result.consume().counters}")
-        edges = self._get_entity_links(docs)
-        batch_size = 10000
-        for idx in range(0,len(edges),batch_size):     
-            with self.driver.session(database='neo4j') as session:
-                result = session.run(
-                    CONNECTION_BETWEEN_ENTS_STRING.format(key=filename.replace('.json','')),
-                    database_="neo4j",
-                    edges=edges[idx:idx+batch_size],
-                    filename=filename,
-                )    
-            logging.info(f"Uploaded {idx}/{len(edges)}")       
+            logging.info(f"Uploading document similarity edges summary : {result.consume().counters}")
 
-        logging.info(f"Uploading entity co-appearance edges summary: {result.consume().counters}")
-        stop = default_timer()
-        logging.info(f"Upload took {stop-start}s")
+            files = self._get_files(session)
+            files.remove(filename)
+            for file in files:
+                logging.info(f"Calculating and uploading similarities for {file}")
+                other_docs = self._get_documents(session,file)
+                links = create_similarity_links_between_files(docs,other_docs)
+                result = session.run(SIMILARITY_EDGE_STRING,edges=self._prepare_similarity_links(links))
+                logging.info(f"Uploading document similarity edges summary for {file} : {result.consume().counters}")
+         
+            result = session.run(
+                CONNECTION_BETWEEN_ENTS_STRING.format(key=filename.replace('.json','')),
+                database_="neo4j",
+                edges=self._get_entity_links(docs) ,
+                filename=filename,
+            )        
 
+            logging.info(f"Uploading entity co-appearance edges summary: {result.consume().counters}")
+            stop = default_timer()
+            logging.info(f"Upload took {stop-start}s")
+
+    def _prepare_similarity_links(self, similarity_links: list[LinkVector]) -> dict[str,str|int]:
+        return [
+                {"url1": sim.url1,
+                "url2": sim.url2,
+                "cosinus": sim.cosinus,
+                'jaccard': sim.jaccard}
+                for sim in similarity_links]
+    
     def delete_json(self, json_name: str):
         with self.driver.session() as session:
             def delete_articles(tx):
@@ -171,6 +212,17 @@ RETURN e1, r
                 key=key
             )
             logging.info(f"Updating community nodes in {mode}. Status: {summary.counters}")
+
+    def _get_documents(self, session: Session, filename: str) -> dict[str,dict[Entity,int]]:
+        result_dict = defaultdict(dict)
+        result = session.run(GET_DOCUMENT_BY_FILENAME_QUERY, filename=filename)
+
+        for record in result:
+            url = record['url']
+            ent = Entity(name=record['entity'],type_=record['type'])
+            result_dict[url][ent] = record['count']
+
+        return result_dict
 
     def _get_entity_links(self, docs: list[Document]) -> list[dict[str,str|float]]:
         summed_counter = sum((doc.return_tuple_connections() for doc in docs),Counter())

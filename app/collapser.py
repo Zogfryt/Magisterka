@@ -51,12 +51,27 @@ def create_similarity_links(documents: list[Document]) -> list[LinkVector]:
             if jacc * cos > 0:
                 vectors.append(
                     LinkVector(
-                        doc1=doc1,
-                        doc2=doc2,
+                        url1=doc1.url,
+                        url2=doc2.url,
                         cosinus=cos,
                         jaccard=jacc
                     )
                 )
+    return vectors
+
+def create_similarity_links_between_files(documents: list[Document], other_docs: dict[str,dict[Entity,int]]) -> list[LinkVector]:
+    vectors = []
+    for doc, url in product(documents, other_docs.keys()):
+        jacc, cos = calculate_distances(doc.entities, other_docs[url])
+        if jacc * cos > 0:
+            vectors.append(
+                LinkVector(
+                    url1=doc.url,
+                    url2=url,
+                    cosinus=cos,
+                    jaccard=jacc
+                )
+            )
     return vectors
             
     

@@ -64,7 +64,7 @@ class Document():
     
 @dataclass()
 class LinkVector:
-    doc1: Document
-    doc2: Document
+    url1: str
+    url2: str
     cosinus: float
     jaccard: float

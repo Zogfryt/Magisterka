@@ -21,12 +21,10 @@ def load_data_action(content: str, conf_content: str, filename: str, ner_format:
             doc.entities = get_ners(doc, session_state['nlp'], dictionary,blacklist)
     non_matching = loader.check_ent_types_integrity(matches,documents)
     if len(non_matching) == 0:
-        status_.write('Calculating distances')
-        vectors = create_similarity_links(documents)
+        status_.write('Sending to database...')
+        loader.load_data(documents, filename)
         status_.write('Saving Configuration')
         loader.save_matches_config(matches,filename.replace('.json','.toml'))
-        status_.write('Sending to database...')
-        loader.load_data(documents, vectors, filename)
         status_.update(label='Loading complete!', state='complete', expanded=False)
     else:
         status_.update(label=f'Loading failed! There are types in "matches" section in your configuration that are not in detected types. You need to add: {non_matching}', state='complete', expanded=False)
