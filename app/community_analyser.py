@@ -42,7 +42,7 @@ RETURN tag, count(tag) as tagCount
 
 GRAPH_PROJECTION_FOR_MODULARITY_QUERY = '''
 MATCH (source: Article)-[r:SIMILARITY]-(target: Article)
-WHERE source.filename IN $selections AND source[$key] IS NOT NULL AND target[$key] IS NOT NULL
+WHERE source.url < target.url AND source.{communityId} IS NOT NULL AND target.{communityId} IS NOT NULL
 RETURN gds.graph.project('Modularity_Articles',
 source,
 target,
@@ -53,11 +53,10 @@ target,
 }}, {{undirectedRelationshipTypes: ['*']}})'''
 
 GRAPH_PROJECTION_FOR_MODULARITY_QUERY_ENTS = '''
-MATCH (a:Article)-[:USED_IN]-(source:Entity)
-MATCH (aa:Article)-[:USED_IN]-(target:Entity)
-MATCH (source)-[r:APPEARANCE]-(target)
+MATCH (source:Entity)-[r:APPEARANCE]-(target:Entity)
+WHERE source.index < target.index AND source.{communityId} IS NOT NULL AND target.{communityId} IS NOT NULL
 WITH source, target, {equation} as count
-WHERE a.filename IN $selections AND aa.filename IN $selections AND source[$key] IS NOT NULL AND target[$key] IS NOT NULL
+WHERE count > 0
 RETURN gds.graph.project('Modularity_Entities',
 source,
 target,
@@ -157,16 +156,14 @@ class Analyzer:
             graph, _ = self.gds_driver.graph.cypher.project(
                 query,
                 database='neo4j',
-                selections=selections,
-                key=key
+                selections=selections
             )
         except Exception:
             self.gds_driver.graph.drop(graph_name)
             graph, _ = self.gds_driver.graph.cypher.project(
                 query,
                 database='neo4j',
-                selections=selections,
-                key=key
+                selections=selections
             )
         return graph
     

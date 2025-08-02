@@ -57,9 +57,13 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
         session_state[f'key_{mode}'] = '_'.join(selection.replace('.json','') for selection in sorted(selections))
         session_state[f'analyzed_files_{mode}'] = set(selections)
         if analyzer.is_clustering_needed(session_state[f'key_{mode}']):
+            logging.info('Generating graph projection')
             session_state[f'graph_{mode}'] = cluster.create_graph_projection(selections,graph_name)
+            logging.info('Undergoing Laiden Clasterization')
             session_state[f'leiden_result_{mode}'] = cluster.leiden_cluster(session_state[f'graph_{mode}'])
+            logging.info('Deleting graph projection')
             cluster.delete_graph_projection(graph_name)
+            logging.info('Updating graph with new communities')
             loader.update_with_communities(session_state[f'leiden_result_{mode}'][['nodeId','communityId']].to_dict(orient='records'),session_state[f'key_{mode}'],mode)
         else:
             session_state[f'leiden_result_{mode}'] = analyzer.get_community_nodes(session_state[f'key_{mode}'],mode)

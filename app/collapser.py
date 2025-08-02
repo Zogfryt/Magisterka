@@ -1,6 +1,6 @@
 from dataclasses_custom import Document, LinkVector, Entity
 from collections import Counter
-from itertools import chain, product
+from itertools import chain, product, combinations
 import numpy as np
 from tqdm import tqdm
 import logging
@@ -31,7 +31,7 @@ def __calculate_jaccard(count1: Counter, count2: Counter) -> float:
         top += (count1[key] + count2[key]) * (key in count2)
         bottom += count1[key]
         
-    return top / bottom
+    return top / (bottom + 1e5)
 
 
 def calculate_distances(ents1: dict[Entity,int], ents2: dict[Entity,int]) -> tuple[float,float]:
@@ -45,18 +45,17 @@ def calculate_distances(ents1: dict[Entity,int], ents2: dict[Entity,int]) -> tup
 def create_similarity_links(documents: list[Document]) -> list[LinkVector]:
     logging.info("Calculating Distances")
     vectors = []
-    for doc1, doc2 in tqdm(product(documents,documents)):
-        if doc1.url != doc2.url:
-            jacc, cos = calculate_distances(doc1.entities,doc2.entities)
-            if jacc * cos > 0:
-                vectors.append(
-                    LinkVector(
-                        url1=doc1.url,
-                        url2=doc2.url,
-                        cosinus=cos,
-                        jaccard=jacc
-                    )
+    for doc1, doc2 in tqdm(combinations(documents,2)):
+        jacc, cos = calculate_distances(doc1.entities,doc2.entities)
+        if jacc * cos > 0:
+            vectors.append(
+                LinkVector(
+                    url1=doc1.url,
+                    url2=doc2.url,
+                    cosinus=cos,
+                    jaccard=jacc
                 )
+            )
     return vectors
 
 def create_similarity_links_between_files(documents: list[Document], other_docs: dict[str,dict[Entity,int]]) -> list[LinkVector]:

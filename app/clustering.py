@@ -8,11 +8,11 @@ class GraphClusterer:
     def __init__(self, gds_driver: GraphDataScience):
         self.gds_driver = gds_driver
 
-    def _create_graph_projection_articles(self, selections: List[str]) -> Graph:
+    def Selec_create_graph_projection_articles(self, selections: List[str]) -> Graph:
         graph, _ = self.gds_driver.graph.cypher.project(
             """
             MATCH (source: Article)-[r:SIMILARITY]-(target: Article)
-            WHERE source.filename IN $selections
+            WHERE source.filename IN $selections AND target.filename IN $selections AND source.url < target.url
             RETURN gds.graph.project('DocumentWithDistance',source,target,{ relationshipProperties: r { .cosinus } }, {undirectedRelationshipTypes: ['*']})""",
             database='neo4j',
             selections=selections
@@ -23,11 +23,10 @@ class GraphClusterer:
         keys = [key.replace('.json','') for key in selections]
         equation = ' + '.join([f"coalesce(r.{key},0)" for key in keys])
         query = """
-            MATCH (a: Article)-[:USED_IN]-(source:Entity)
-            MATCH (aa: Article)-[:USED_IN]-(target: Entity)
-            MATCH (source)-[r:APPEARANCE]-(target)
-            WHERE aa.filename IN $selections AND a.filename in $selections
+            MATCH (source: Entity)-[r:APPEARANCE]-(target: Entity)
+            WHERE source.index < target.index
             WITH source, target, {equation} as count
+            WHERE count > 0
             RETURN gds.graph.project('EntitiesWithCoExistance',source,target,{{ relationshipProperties: {{ count: count }} }}, {{undirectedRelationshipTypes: ['*']}})"""
         graph, _ = self.gds_driver.graph.cypher.project(
             query.format(equation=equation),   

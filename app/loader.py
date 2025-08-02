@@ -49,6 +49,9 @@ CREATE INDEX entity_index_entitiy_type IF NOT EXISTS FOR (e:Entity) on (e.entity
 INDEX_ARTICLE_URL_FILENAME = '''
 CREATE INDEX article_index_url_filename IF NOT EXISTS FOR (a:Article) on (a.url,a.filename)'''
 
+INDEX_ENTITY_INDEX = '''
+CREATE INDEX entity_index_index IF NOT EXISTS FOR (e:Entity) on (e.index)'''
+
 class Neo4jExecutor:
     
     driver: Driver
@@ -67,6 +70,7 @@ class Neo4jExecutor:
                 session.run(INDEX_ARTICLE_URL)
                 session.run(INDEX_ARTICLE_URL_FILENAME)
                 session.run(INDEX_ENTITY_NAME_TYPE)
+                session.run(INDEX_ENTITY_INDEX)
         except Exception:
             logging.error(f"Indexes creation failure")
             
@@ -103,6 +107,7 @@ class Neo4jExecutor:
                 """CALL {
                 UNWIND $documents AS docs
                 Merge (e:Entity {entity: docs.ent_name, type: docs.ent_type})
+                ON CREATE SET e.index = docs.ent_name + "_" + docs.ent_type
                 Merge (a:Article {url: docs.url, title: docs.title, content: docs.content, lead_content: docs.lead_content, recipe_label: docs.recipe_label, tags: docs.tags, filename: $filename})
                 Merge (e)-[:USED_IN {count: docs.count}]-(a)
                 } IN CONCURRENT TRANSACTIONS
