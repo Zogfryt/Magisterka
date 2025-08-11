@@ -49,6 +49,31 @@ def show_statistics(n_nodes: int, modularity_score: float):
     col1.metric("Number of nodes", n_nodes)
     col2.metric("Modularity score", f"{modularity_score: .3f}")
 
+def show_graph_statistics(mode: Literal['articles','entities'], communities: list[int]):
+    modularities = session_state[f'modularities_{mode}']
+    analyzer: Analyzer = session_state['analyzer']
+    tag_map: DataFrame = session_state[f'tag_class_mapping_{mode}']
+    class_A_ents, all_ents = 0, 0
+    matching_scores = []
+    
+    for curr_community in communities:
+        result_tags = analyzer.get_article_tags_from_community(int(curr_community), session_state[f'key_{mode}'],mode)
+        ent_matching_score = analyzer.calcalate_matching_ent_metric(
+            session_state[f"match_conf_{mode}"],
+            int(curr_community),
+            session_state[f'key_{mode}'],
+            mode)
+        matching_scores.append(ent_matching_score[0])
+        if not result_tags.empty:
+            classified_tags = result_tags.merge(tag_map,left_on='tag',right_on='tag',how='left')
+            all_ents += classified_tags['tagCount'].sum()
+            class_A_ents += classified_tags.loc[classified_tags['class'] == 'A','tagCount'].sum()
+
+    col1, col2, col3 = columns(3)
+    col1.metric("Clustering modularity score", f"{modularities['modularity'].sum(): .2f}")
+    col2.metric("Average percentage of A tag", f"{class_A_ents * 100 / all_ents : .2f}%")
+    col3.metric("Average entity match", f"{sum(matching_scores)/len(matching_scores) : .2f}")
+
 def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed: bool):
     analyzer: Analyzer = session_state['analyzer']
     cluster: GraphClusterer = session_state['cluster_driver']
@@ -81,6 +106,7 @@ def calculate_and_show_chart(mode: Literal['articles','entities'], files_changed
             del session_state[f'modularities_{mode}']
     df = session_state.get(f'leiden_result_{mode}',DataFrame({'communityId': [], 'nodeId': []}))
     aggregated_df = df.groupby('communityId').aggregate({'nodeId': list}) 
+    show_graph_statistics(mode,aggregated_df.index)
     choice = selectbox(label='Choose community ID', options=aggregated_df.index, key=f'community_selectbox_{mode}')
     if choice is not None:
         df_modularities: DataFrame = session_state[f'modularities_{mode}']

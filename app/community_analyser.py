@@ -93,13 +93,13 @@ RETURN sum(r.count) AS counts
 
 MATCHING_ENTS_QUERY_ENTITY = '''
 MATCH (a:Article)-[r:USED_IN]-(e:Entity)
-WHERE e[$key] = $communityId and e.type in $matching and e.filename = $selection
+WHERE e[$key] = $communityId and e.type in $matching and a.filename = $selection
 RETURN sum(r.count) AS counts
 '''
 
 NON_MATCHING_ENTS_QUERY_ENTITY = '''
 MATCH (a:Article)-[r:USED_IN]-(e:Entity)
-WHERE e[$key] = $communityId and e.type in $non_matching and e.filename = $selection
+WHERE e[$key] = $communityId and e.type in $non_matching and a.filename = $selection
 RETURN sum(r.count) AS counts
 '''
 

@@ -20,7 +20,7 @@ services:
       - 7474:7474
       - 7687:7687
     environment:
-#      - NEO4JLABS_PLUGINS=["apoc","graph-data-science"] Uncomment if running first time.
+#      - NEO4JLABS_PLUGINS=["apoc","graph-data-science"] # Uncomment if running first time.
       - NEO4J_AUTH=neo4j/AGH_2025
       - NEO4J_dbms_memory_heap_initial__size=2G
       - NEO4J_dbms_memory_heap_max__size=4G
