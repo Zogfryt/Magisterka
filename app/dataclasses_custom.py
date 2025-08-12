@@ -2,8 +2,21 @@ from dataclasses import dataclass, field
 from collections import Counter
 from itertools import combinations
 from pathlib import Path
+from enum import Flag, auto
 
 CONFIGURATION_FOLDER = Path(__file__).absolute().parent / 'configurations' 
+
+class Mode(Flag):
+    articles = auto()
+    entities = auto()
+
+class Distance(Flag):
+    cosinus = auto()
+    jaccard = auto()
+
+class GraphName(Flag):
+    DocumentWithDistance = auto()
+    EntitiesWithCoExistance = auto()
 
 @dataclass
 class Blacklist:

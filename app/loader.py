@@ -1,7 +1,6 @@
 from neo4j import Result, Driver, Session
 import logging
-from dataclasses_custom import Document, LinkVector, Matches, Entity
-from typing import Literal
+from dataclasses_custom import Document, LinkVector, Matches, Entity, Mode
 from pandas import DataFrame
 from itertools import chain
 from collections import Counter
@@ -194,8 +193,8 @@ RETURN e1, r
                 return_dict[key] = return_dict.get(key,0) + record[1]['count']
             return return_dict
         
-    def update_with_communities(self, communities: list[dict[str,str]], key: str,mode: Literal['articles','entities']):
-        if mode == 'articles':
+    def update_with_communities(self, communities: list[dict[str,str]], key: str,mode: Mode):
+        if mode == Mode.articles:
             _, summary, _  = self.driver.execute_query(
                 """UNWIND $communities as data
                 MATCH (a: Article)

@@ -1,7 +1,6 @@
 from neo4j import Driver, Result
 from graphdatascience import GraphDataScience, Graph
-from dataclasses_custom import Matches
-from typing import Literal
+from dataclasses_custom import Matches, Mode, Distance
 from itertools import chain
 from pandas import DataFrame
 import logging
@@ -49,7 +48,7 @@ target,
 {{
     sourceNodeProperties: source {{ .{communityId} }},
     targetNodeProperties: target {{ .{communityId} }},
-    relationshipProperties: r {{ .cosinus }}
+    relationshipProperties: r {{ .{metric} }}
 }}, {{undirectedRelationshipTypes: ['*']}})'''
 
 GRAPH_PROJECTION_FOR_MODULARITY_QUERY_ENTS = '''
@@ -123,9 +122,9 @@ class Analyzer:
         except Exception:
             logging.error("connection error")
 
-    def get_ents_from_community(self, communityId: int, key: str, mode: Literal['articles','entities']) -> DataFrame:    
+    def get_ents_from_community(self, communityId: int, key: str, mode: Mode) -> DataFrame:    
         records, _, _ = self.neo4j_driver.execute_query(
-            ENTITY_GROUP_QUERY if mode == 'articles' else ENTITY_GROUP_QUERY_BY_ENTITY,
+            ENTITY_GROUP_QUERY if mode == Mode.articles else ENTITY_GROUP_QUERY_BY_ENTITY,
             communityId=communityId,
             database_='neo4j',
             key=key
@@ -134,24 +133,30 @@ class Analyzer:
         all_records =  list(chain(*[record.values() for record in records]))
         return DataFrame(all_records).groupby(['entity','type'],as_index=False).sum()
     
-    def get_article_tags_from_community(self, communityId: int, key: str, mode: Literal['articles','entities']) -> DataFrame:
+    def get_article_tags_from_community(self, communityId: int, key: str, mode: Mode) -> DataFrame:
         records, _, _  = self.neo4j_driver.execute_query(
-            TAG_COUNTER_FOR_ARTICLE_COMMUNITY if mode == 'articles' else TAG_COUNTER_FOR_ENTITY_COMMUNITY,
+            TAG_COUNTER_FOR_ARTICLE_COMMUNITY if mode == Mode.articles else TAG_COUNTER_FOR_ENTITY_COMMUNITY,
             communityId=communityId,
             database_='neo4j',
             key=key
         )
         return DataFrame([record.data() for record in records])
     
-    def _create_modularity_projection(self, selections: list[str], key: str, mode: Literal['articles','entities']) -> Graph:
-        if mode == 'articles':
-            query = GRAPH_PROJECTION_FOR_MODULARITY_QUERY.format(communityId=key) 
+    def _create_modularity_projection(self, 
+                                      selections: list[str], 
+                                      key: str, 
+                                      mode: Mode, 
+                                      distance: Distance | None = None) -> Graph:
+        if mode == Mode.articles:
+            if distance is None:
+                raise AttributeError('With articles mode distance is mandatory')
+            query = GRAPH_PROJECTION_FOR_MODULARITY_QUERY.format(communityId=key, metric=distance.name) 
         else:
             keys = [k.replace('.json','') for k in selections]
             equation = ' + '.join([f"coalesce(r.{key},0)" for key in keys])
             query = GRAPH_PROJECTION_FOR_MODULARITY_QUERY_ENTS.format(communityId=key,equation=equation) 
-        logging.info(f"{mode}: {query}")
-        graph_name = 'Modularity_Articles' if mode == 'articles' else 'Modularity_Entities'
+        logging.info(f"{mode.name}: {query}")
+        graph_name = 'Modularity_Articles' if mode == Mode.articles else 'Modularity_Entities'
         try:
             graph, _ = self.gds_driver.graph.cypher.project(
                 query,
@@ -168,21 +173,23 @@ class Analyzer:
         return graph
     
     
-    def calculate_modularity(self, selections: list[str], key: str, mode: Literal['articles','entities']) -> DataFrame:
-        graph = self._create_modularity_projection(selections, key, mode)
-        if mode == 'articles':
-            result = self.gds_driver.modularity.stream(graph,communityProperty=key, relationshipWeightProperty='cosinus')
-        elif mode == 'entities':
+    def calculate_modularity(self, selections: list[str], key: str, mode: Mode, distance: Distance | None) -> DataFrame:
+        graph = self._create_modularity_projection(selections, key, mode, distance=distance)
+        if mode == Mode.articles and distance is not None:
+            result = self.gds_driver.modularity.stream(graph,communityProperty=key, relationshipWeightProperty=distance.name)
+        elif mode == Mode.entities:
             result = self.gds_driver.modularity.stream(graph,communityProperty=key, relationshipWeightProperty='count')
+        elif mode == Mode.articles and distance is None:
+            raise AttributeError("Distance is required paremeter while using articles mode")
         else:
-            raise AttributeError("In calculating modularity you can choose only: 'articles','entities'")
+            raise AttributeError(f"In calculating modularity you can choose only: {[opt.name for opt in Mode]}")
         self.gds_driver.graph.drop(graph)
         return result.set_index('communityId',drop=True)
     
 
-    def get_article_tags_class(self, selections: list[str], key: str, mode: Literal['articles','entities']) -> DataFrame:
+    def get_article_tags_class(self, selections: list[str], key: str, mode: Mode) -> DataFrame:
         records, _, _ = self.neo4j_driver.execute_query(
-            ARTICLE_TAGS_COMMUNITY_MINING_QUERY if mode == 'articles' else ARTICLE_TAGS_COMMUNITY_MINING_QUERY_ENTITY,
+            ARTICLE_TAGS_COMMUNITY_MINING_QUERY if mode == Mode.articles else ARTICLE_TAGS_COMMUNITY_MINING_QUERY_ENTITY,
             selections=selections,
             key=key,
             database_='neo4j'
@@ -193,7 +200,6 @@ class Analyzer:
             (df['n_appearances'] > 1) & (df['n_communities'] > 1),
             (df['n_appearances'] > 1) & (df['n_communities'] == 1)
         ]
-        
         df['class'] = select(conditions,['B','A'], default='C')
         return df
     
@@ -213,11 +219,11 @@ class Analyzer:
                                       matches: dict[str,Matches],
                                       communityId: int,
                                       cluster_key: str,
-                                      mode: Literal['articles','entities']
+                                      mode: Mode
                                       ) -> tuple[float,float]:
         matching_scores, non_matching_scores = [], []
-        query_match = MATCHING_ENTS_QUERY_ARTICLE if mode == 'articles' else MATCHING_ENTS_QUERY_ENTITY
-        query_non_match = NON_MATCHING_ENTS_QUERY_ARTICLE if mode == 'articles' else NON_MATCHING_ENTS_QUERY_ENTITY
+        query_match = MATCHING_ENTS_QUERY_ARTICLE if mode == Mode.articles else MATCHING_ENTS_QUERY_ENTITY
+        query_non_match = NON_MATCHING_ENTS_QUERY_ARTICLE if mode == Mode.articles else NON_MATCHING_ENTS_QUERY_ENTITY
         for key, matches_ in matches.items():
             records, _, _ = self.neo4j_driver.execute_query(
             query_match,
@@ -254,8 +260,8 @@ class Analyzer:
         )
         return records[0].data()['counts'] == 0
     
-    def get_community_nodes(self, key: str, mode: Literal['articles','entities']) -> DataFrame:
-        if mode == 'entities':
+    def get_community_nodes(self, key: str, mode: Mode) -> DataFrame:
+        if mode == Mode.entities:
             records, _, _ = self.neo4j_driver.execute_query(
                 """
                 MATCH (e:Entity)
