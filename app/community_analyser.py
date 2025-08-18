@@ -10,6 +10,12 @@ import tomllib
 
 logging.basicConfig(level=logging.INFO)
 
+CLUSTER_DISTRIBUTION_QUERY="""
+MATCH (a:{node_type})
+WHERE a.{key} is not NULL
+RETURN a.{key} AS cluster, count(a) AS nodeCount
+ORDER BY nodeCount DESC"""
+
 ENTITY_GROUP_QUERY="""
 MATCH (e:Entity)-[r:USED_IN]->(a:Article)
 WHERE a[$key] = $communityId
@@ -248,11 +254,12 @@ class Analyzer:
 
         return matching / (matching+non_matching+1e-5), non_matching / (matching+non_matching+1e-5)
     
-    def is_clustering_needed(self, key: str) -> bool:
+    def is_clustering_needed(self, key: str, mode: Mode) -> bool:
+        node_type = 'Article' if mode == Mode.articles else 'Entity'
         records, _, _ = self.neo4j_driver.execute_query(
-            """
-            MATCH (e:Entity)
-            WHERE e[$key] IS NOT NULL
+            f"""
+            MATCH (e:{node_type})
+            WHERE e.{key} IS NOT NULL
             RETURN COUNT(e) as counts
             """,
             database_='neo4j',
@@ -284,3 +291,13 @@ class Analyzer:
             )
         return DataFrame([record.data() for record in records])
     # df.drop(columns=['n_appearances','n_communities'])
+    def analyse_cluster_sizes_distribution(self, key: str, mode: Mode) -> DataFrame:
+        node_type = 'Article' if mode == Mode.articles else 'Entity'
+        records, _, _ = self.neo4j_driver.execute_query(
+            CLUSTER_DISTRIBUTION_QUERY.format(
+                node_type=node_type,
+                key=key
+            ),
+            database_='neo4j'
+        )
+        return DataFrame([record.data() for record in records])

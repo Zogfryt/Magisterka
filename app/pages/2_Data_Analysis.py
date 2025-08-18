@@ -2,7 +2,7 @@ from streamlit import multiselect, session_state, write, button, plotly_chart, t
 from shared import init
 from loader import Neo4jExecutor
 import plotly.express as px
-from plotly.graph_objects import Pie, Figure
+from plotly.graph_objects import Pie, Figure, Histogram
 from pandas import Series, DataFrame
 from clustering import GraphClusterer
 from community_analyser import Analyzer
@@ -74,6 +74,41 @@ def show_graph_statistics(mode: Mode, suffix: str, communities: list[int]):
     col2.metric("Average percentage of A tag", f"{class_A_ents * 100 / all_ents : .2f}%")
     col3.metric("Average entity match", f"{sum(matching_scores)/len(matching_scores) : .2f}")
 
+    graph_size_distribution = analyzer.analyse_cluster_sizes_distribution(session_state[f'key_{suffix}'], mode)
+    fig = Figure(data=[Histogram(
+        x=graph_size_distribution['nodeCount'],
+        xbins=dict(
+            start=0,
+            end=graph_size_distribution['nodeCount'].max(),
+            size=100
+        ),
+        marker=dict(
+        line=dict(
+            width=1, 
+            color='white'
+            )
+        )
+    )])
+    write(f"Number of communities: {graph_size_distribution.shape[0]}")
+    fig.update_layout(
+        xaxis=dict(
+            title='Number of Nodes',
+            title_font=dict(size=20),     
+            tickfont=dict(size=16),
+            range=[0,(graph_size_distribution['nodeCount'].max() // 100 + 1) * 100]   
+        ),
+        yaxis=dict(
+            title='Frequency',
+            title_font=dict(size=20),     
+            tickfont=dict(size=16),       
+            range=[0, None]
+        ),
+        title='Distribution of community sizes',
+)
+    plotly_chart(fig, key=f'distribution_{session_state[f'key_{suffix}']}')
+
+    
+
 def generate_key(selections: str, suffix: str | None = None) -> str:
     base = '_'.join(selection.replace('.json','') for selection in sorted(selections)) 
     return base if suffix is None else base + '_' + suffix
@@ -102,13 +137,14 @@ def cluster_graph(loader: Neo4jExecutor,
         mode)
 
 def collect_data_ents(loader: Neo4jExecutor, cluster: GraphClusterer, analyzer: Analyzer, selections: list[str]):
+    mode = Mode.entities
     key = generate_key(selections)
     session_state['key_entities'] = key
-    if analyzer.is_clustering_needed(key):
-        cluster_graph(loader,cluster,Mode.entities.name, Mode.entities)
+    if analyzer.is_clustering_needed(key,mode):
+        cluster_graph(loader,cluster,mode.name, mode)
     else:
-        session_state['leiden_result_entities'] = analyzer.get_community_nodes(key,Mode.entities)
-    collect_mappings(Mode.entities.name,key,Mode.entities)
+        session_state['leiden_result_entities'] = analyzer.get_community_nodes(key,mode)
+    collect_mappings(mode.name,key,mode)
 
 def collect_data_articles(loader: Neo4jExecutor, cluster: GraphClusterer, analyzer: Analyzer, selections: list[str]):
     mode = Mode.articles
@@ -116,7 +152,7 @@ def collect_data_articles(loader: Neo4jExecutor, cluster: GraphClusterer, analyz
         suffix = mode.name + "_" + option.name
         key = generate_key(selections,suffix)
         session_state[f'key_{suffix}'] = key
-        if analyzer.is_clustering_needed(key):
+        if analyzer.is_clustering_needed(key,mode):
             cluster_graph(loader,cluster,suffix,mode,option)
         else:
             session_state[f'leiden_result_{suffix}'] = analyzer.get_community_nodes(key,mode)
