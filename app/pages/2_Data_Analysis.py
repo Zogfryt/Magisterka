@@ -13,6 +13,21 @@ from dataclasses_custom import Mode, Distance, GraphName
 
 logging.basicConfig(level=logging.INFO)
 
+def enlarge_axes(figure: Figure, range: tuple[float,float] = None, range_y: tuple[float,float] = None) -> Figure:
+    xaxis = dict(
+        title_font=dict(size=20),     
+        tickfont=dict(size=16),  
+    )
+    if range is not None:
+        xaxis['range'] = range
+    yaxis = dict(
+        title_font=dict(size=20),     
+        tickfont=dict(size=16),       
+    )
+    if range_y is not None:
+        yaxis['range'] = range_y
+    return figure.update_layout(xaxis=xaxis,yaxis=yaxis)
+
 def entity_plot(data: dict[tuple[str,str],int]):
     entity_dict = dict()
     for key, value in data.items():
@@ -117,6 +132,7 @@ def collect_mappings(suffix: str, key: str, mode: Mode, distance: Distance | Non
     session_state[f'tag_class_mapping_{suffix}'] = analyzer.get_article_tags_class(selections, key, mode)
     session_state[f'modularities_{suffix}'] = analyzer.calculate_modularity(selections, key, mode, distance)
     session_state[f"match_conf_{suffix}"] = analyzer.get_matches_criteria(selections,session_state['conf_path'])
+    session_state[f'entity_list_{suffix}'] = analyzer.get_ents_with_key(key,mode)
 
 def cluster_graph(loader: Neo4jExecutor, 
                   cluster: GraphClusterer, 
@@ -202,14 +218,16 @@ def calculate_and_show_chart(mode: Mode, files_changed: bool, select_btn: bool):
         show_statistics(len(aggregated_df.loc[choice,'nodeId']),df_modularities.loc[choice, 'modularity'])
         result = analyzer.get_ents_from_community(int(choice), session_state[f'key_{suffix}'],mode)
         result = result.sort_values('entityCount',ascending=False)
+        result_top20 = result[['entity','entityCount']].groupby('entity',as_index=False).agg({'entityCount':'sum'}).sort_values('entityCount',ascending=False)
         result_tags = analyzer.get_article_tags_from_community(int(choice), session_state[f'key_{suffix}'],mode)
-        fig = px.bar(result.iloc[:20],x='entity',y='entityCount',title='Top 20 entities')
+        fig = px.bar(result_top20.iloc[:20],x='entity',y='entityCount',title='Top 20 entities')
+
         plotly_chart(fig)
         res = result[['type','entityCount']].groupby('type', as_index=False).sum().sort_values('entityCount',ascending=False)
         fig = px.bar(res,x='type',y='entityCount',title='Top entity types')
         fig.update_xaxes(tickangle=45)
         plotly_chart(fig, key=f'plot_entity_type_{suffix}')
-        fig = px.bar(result_tags.sort_values('tagCount',ascending=False).iloc[:30],x='tag',y='tagCount',title='Top 30 tags in the comminuty')
+        fig = px.bar(result_tags.sort_values('tagCount',ascending=False).iloc[:20],x='tag',y='tagCount',title='Top 20 tags in the comminuty')
         fig.update_xaxes(tickangle=45)
         plotly_chart(fig, key=f'plot_tag_type_{suffix}')
         tag_map: DataFrame = session_state[f'tag_class_mapping_{suffix}']
@@ -223,10 +241,55 @@ def calculate_and_show_chart(mode: Mode, files_changed: bool, select_btn: bool):
         col3.dataframe(classified_tags.loc[classified_tags['class'] == 'B'].sort_values('tagCount',ascending=False).drop(columns=['class']))
         col4.text('C class tags within cluster')
         col4.dataframe(classified_tags.loc[classified_tags['class'] == 'C'].sort_values('tagCount',ascending=False).drop(columns=['class']))
+        # col1, col2 = columns([1,3])
+        # colors = {'A':'#80C9FF', 'B':'#0066CC','C':'#FF0000'}
+        # fig = px.pie(classified_tags,values='tagCount',names='class',title='Tags distribution in the community',
+        #              color_discrete_map=colors, color='class')
+        # col1.plotly_chart(fig, key=f'plot_tag_class_{suffix}')  
+        # fig = px.bar(classified_tags.loc[classified_tags['class'] == 'A'].sort_values('tagCount',ascending=False).iloc[:20]
+        #              ,x='tag',y='tagCount',title='Most frequent tags of class A')
+        # col2.plotly_chart(fig, key=f'plot_tag_class_A_{suffix}')
         match_stats = analyzer.calcalate_matching_ent_metric(session_state[f"match_conf_{suffix}"],int(choice),session_state[f'key_{suffix}'],mode)
         figure = Figure(data=[Pie(labels=["Matching","Not Matching"], values=list(match_stats),title="Matching ents ratio")])
         plotly_chart(figure)
 
+    entity_choice: str = selectbox(label='Choose entity for connection check', options=session_state[f'entity_list_{suffix}'], key=f'entity_selection_{suffix}')
+    if entity_choice is not None:
+        name = sub(r'\(.*\)','',entity_choice)
+        type_ = entity_choice.replace(name,"",1)
+        type_ = type_[1:-1]
+        if mode == Mode.articles:
+            session_state[f'ents_connection_{suffix}'] = analyzer.analyse_entity_connection_articles(session_state[f'key_{suffix}'],name+'_'+type_,selections)
+        else:
+            session_state[f'ents_connection_{suffix}'] = analyzer.analyse_entity_connection_entities(session_state[f'key_{suffix}'],name+'_'+type_, selections)
+        df_ents : DataFrame = session_state[f'ents_connection_{suffix}']
+        df_ents['entity'] = df_ents['name'] + '(' + df_ents['type'] + ')'
+        df_ents_matching = df_ents.loc[df_ents['sameCluster'] > 0]
+        df_ents_matching['Matching'] = df_ents_matching['sameCluster'] # / df_ents_matching['sameCluster'].sum() * 100
+        df_ents_non_matching = df_ents.loc[df_ents['differentCluster'] > 0]
+        df_ents_non_matching['Non_matching'] = df_ents_non_matching['differentCluster']# / df_ents_non_matching['differentCluster'].sum() * 100
+        df_ents_matching = df_ents_matching.sort_values('Matching',ascending=False)
+        write(f'Overall matching connections: {df_ents_matching.shape[0]} with total strength of {df_ents_matching['Matching'].sum()}' )
+        figure = px.bar(df_ents_matching[:20], x='entity', y='Matching',labels={'Matching': "Connection Strength", "entity": "Entity Name (Type)"})
+        plotly_chart(figure, key=f'20_top_ents_matching_{suffix}')
+        df_ents_non_matching = df_ents_non_matching.sort_values('Non_matching',ascending=False)
+        write(f'Overall non matching connections: {df_ents_non_matching.shape[0]} with total strength of {df_ents_non_matching['Non_matching'].sum()}' )
+        figure = px.bar(df_ents_non_matching[:20],x='entity',y='Non_matching',labels={'Non_matching': "Connection Strength", "entity": "Entity Name (Type)"})
+        plotly_chart(figure, key=f'20_top_ents_non_matching_{suffix}')
+        figure = px.histogram(df_ents_matching,x='Matching')
+        plotly_chart(figure,key=f'ents_matching_hist_{suffix}')
+        figure = px.histogram(df_ents_non_matching,x='Non_matching')
+        colors = ['#80C9FF', '#0066CC']
+        plotly_chart(figure,key=f'ents_non_matching_hist_{suffix}')
+        pie_df = DataFrame([{"Match": "Inner-connections", "value": df_ents_matching['Matching'].sum(), "text": f"{df_ents_matching['Matching'].sum()}\n({df_ents_matching.shape[0]})"},
+                            {"Match": "External connections", "value": df_ents_non_matching['Non_matching'].sum(), "text": f"{df_ents_non_matching['Non_matching'].sum()}\n({df_ents_non_matching.shape[0]})"}])
+        figure = px.pie(pie_df,names='Match',values='value',color=colors)
+        figure.update_traces(text=pie_df["text"],textinfo='text')
+        plotly_chart(figure, key=f'pie_chart_ents_{suffix}')
+
+
+
+        
 init()
 loader: Neo4jExecutor = session_state['loader']
 analyzer: Analyzer = session_state['analyzer']
@@ -256,8 +319,10 @@ with entities:
                                 max_value=ents_max,
                                 value=(ents_min,ents_max)
                                 )
-        fig = px.histogram(ents_all.loc[(ents_all['count'] >= selected_min) & (ents_all['count'] <= selected_max)],
-                        x='count',
+        write(ents_all['count'].quantile(.9))
+        fig = px.histogram(ents_all.loc[(ents_all['count'] >= selected_min) & (ents_all['count'] <= selected_max)] \
+                           .rename(columns={'count': 'Entity Count'}),
+                        x='Entity Count',
                         title='Selected slice of histogram of entities count')
         plotly_chart(fig)
         

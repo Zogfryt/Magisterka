@@ -2,7 +2,7 @@ from neo4j import Driver, Result
 from graphdatascience import GraphDataScience, Graph
 from dataclasses_custom import Matches, Mode, Distance
 from itertools import chain
-from pandas import DataFrame
+from pandas import DataFrame, Series
 import logging
 from numpy import select
 from pathlib import Path
@@ -113,6 +113,35 @@ MATCH (a:Article)-[r:USED_IN]-(e:Entity)
 WHERE a[$key] = $communityId and e.type in $non_matching and a.filename = $selection
 RETURN sum(r.count) AS counts
 '''
+
+ENTITY_CONNECTION_ARTICLE = """
+MATCH (e:Entity)-[r:USED_IN]-(a:Article) 
+WHERE e.index = '{entity_index}' AND a.filename in {selections}
+MATCH (a:Article)-[rr:SIMILARITY]-(aa:Article)
+WHERE aa.filename in {selections}
+MATCH (aa:Article)-[rrr:USED_IN]-(ee:Entity)
+RETURN ee.entity as name, ee.type as type, sum(CASE WHEN a.{key} = aa.{key} then 1 ELSE 0 END) as sameCluster, sum(CASE WHEN a.{key} <> aa.{key} THEN 1 ELSE 0 END)  as differentCluster
+"""
+
+ENTITY_CONNECTION_ENTITY = """
+MATCH (e:Entity)-[r:APPEARANCE]-(ee:Entity)
+WHERE e.index = '{entity_index}'
+RETURN ee.entity as name, ee.type as type, sum(CASE WHEN e.{key} = ee.{key} THEN {equation} ELSE 0 END) as sameCluster, sum(CASE WHEN e.{key} <> ee.{key} THEN {equation} ELSE 0 END) as differentCluster
+"""
+
+ENTITY_LIST_ENTITY = """
+MATCH (e:Entity)
+WHERE e.{key} is not NULL
+RETURN e.entity as name, e.type as type
+"""
+
+ENTITY_LIST_ARTICLE = """
+MATCH (a:Article)-[r:USED_IN]-(e:Entity)
+WHERE a.{key} is not NULL
+WITH DISTINCT e
+RETURN e.entity as name, e.type as type
+"""
+
 
 
 class Analyzer:
@@ -301,3 +330,31 @@ class Analyzer:
             database_='neo4j'
         )
         return DataFrame([record.data() for record in records])
+    
+    def analyse_entity_connection_articles(self, key: str, entity_index: str, selections: list[str]) -> DataFrame:
+        query = ENTITY_CONNECTION_ARTICLE.format(key=key, entity_index=entity_index, selections=selections)
+        records, _, _ = self.neo4j_driver.execute_query(
+            query,
+            database_= 'neo4j'
+        )
+        return DataFrame([record.data() for record in records])
+    
+    def analyse_entity_connection_entities(self, key: str, entity_index: str, selections: list[str]) -> DataFrame:
+        keys = [k.replace('.json','') for k in selections]
+        equation = ' + '.join([f"coalesce(r.{k},0)" for k in keys])
+        query = ENTITY_CONNECTION_ENTITY.format(key=key,entity_index=entity_index, equation=equation)
+        records, _, _ = self.neo4j_driver.execute_query(
+            query,
+            database_= 'neo4j'
+        )
+        return DataFrame([record.data() for record in records])
+    
+    def get_ents_with_key(self, key: str, mode: Mode) -> Series:
+        query = ENTITY_LIST_ARTICLE if mode == Mode.articles else ENTITY_LIST_ENTITY
+        query = query.format(key=key)
+        records, _, _ = self.neo4j_driver.execute_query(
+            query,
+            database_= 'neo4j'
+        )
+        df = DataFrame([record.data() for record in records])
+        return df['name'] + "(" + df['type'] + ")"
